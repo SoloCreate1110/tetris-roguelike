@@ -5,17 +5,43 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
-import { TETROMINO_SHAPES, TetrominoType } from '@/constants/game';
+import { 
+  TETROMINO_SHAPES, 
+  SPECIAL_TETROMINO_SHAPES,
+  TetrominoType, 
+  AllTetrominoType,
+  SPECIAL_TETROMINOS,
+} from '@/constants/game';
 import { TetrominoColors, GameColors } from '@/constants/theme';
 
 interface NextPiecesProps {
-  pieces: TetrominoType[];
+  pieces: AllTetrominoType[];
   cellSize?: number;
 }
 
-const MiniPiece: React.FC<{ type: TetrominoType; cellSize: number }> = ({ type, cellSize }) => {
-  const shape = TETROMINO_SHAPES[type][0];
-  const color = TetrominoColors[type];
+// 通常テトリミノの種類
+const NORMAL_TETROMINOS: TetrominoType[] = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+
+// テトリミノの形状を取得
+const getShape = (type: AllTetrominoType): number[][] => {
+  if (NORMAL_TETROMINOS.includes(type as TetrominoType)) {
+    return TETROMINO_SHAPES[type as TetrominoType][0];
+  }
+  return SPECIAL_TETROMINO_SHAPES[0];
+};
+
+// テトリミノの色を取得
+const getColor = (type: AllTetrominoType): string => {
+  if (NORMAL_TETROMINOS.includes(type as TetrominoType)) {
+    return TetrominoColors[type as TetrominoType];
+  }
+  const specialMino = SPECIAL_TETROMINOS.find(s => s.id === type);
+  return specialMino?.color || '#FFFFFF';
+};
+
+const MiniPiece: React.FC<{ type: AllTetrominoType; cellSize: number }> = ({ type, cellSize }) => {
+  const shape = getShape(type);
+  const color = getColor(type);
 
   return (
     <View style={styles.miniPieceContainer}>

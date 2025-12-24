@@ -1,8 +1,9 @@
 /**
  * ゲームコントロールコンポーネント
+ * ワンタップで1マス移動、長押しで連続移動
  */
 
-import React from 'react';
+import React, { useRef, useCallback } from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/themed-text';
@@ -17,14 +18,93 @@ interface GameControlsProps {
   onHold: () => void;
 }
 
-const ControlButton: React.FC<{
+interface ControlButtonProps {
   onPress: () => void;
-  onPressIn?: () => void;
-  onPressOut?: () => void;
+  onLongPressStart?: () => void;
+  onLongPressEnd?: () => void;
   label: string;
   style?: object;
   size?: 'small' | 'medium' | 'large';
-}> = ({ onPress, onPressIn, onPressOut, label, style, size = 'medium' }) => {
+}
+
+const ControlButton: React.FC<ControlButtonProps> = ({ 
+  onPress, 
+  onLongPressStart, 
+  onLongPressEnd, 
+  label, 
+  style, 
+  size = 'medium' 
+}) => {
+  const isLongPressRef = useRef(false);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const buttonSize = {
+    small: 44,
+    medium: 56,
+    large: 70,
+  }[size];
+
+  const handlePressIn = useCallback(() => {
+    isLongPressRef.current = false;
+    
+    // 長押し検出タイマー（200ms後に長押しと判定）
+    if (onLongPressStart) {
+      longPressTimerRef.current = setTimeout(() => {
+        isLongPressRef.current = true;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        onLongPressStart();
+      }, 200);
+    }
+  }, [onLongPressStart]);
+
+  const handlePressOut = useCallback(() => {
+    // タイマーをクリア
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    // 長押し終了
+    if (isLongPressRef.current && onLongPressEnd) {
+      onLongPressEnd();
+    }
+    
+    // 短いタップの場合のみ1回移動
+    if (!isLongPressRef.current) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onPress();
+    }
+    
+    isLongPressRef.current = false;
+  }, [onPress, onLongPressEnd]);
+
+  return (
+    <Pressable
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={({ pressed }) => [
+        styles.button,
+        {
+          width: buttonSize,
+          height: buttonSize,
+          opacity: pressed ? 0.7 : 1,
+          transform: [{ scale: pressed ? 0.95 : 1 }],
+        },
+        style,
+      ]}
+    >
+      <ThemedText style={styles.buttonText}>{label}</ThemedText>
+    </Pressable>
+  );
+};
+
+// シンプルなボタン（長押し不要なもの用）
+const SimpleButton: React.FC<{
+  onPress: () => void;
+  label: string;
+  style?: object;
+  size?: 'small' | 'medium' | 'large';
+}> = ({ onPress, label, style, size = 'medium' }) => {
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onPress();
@@ -39,8 +119,6 @@ const ControlButton: React.FC<{
   return (
     <Pressable
       onPress={handlePress}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
       style={({ pressed }) => [
         styles.button,
         {
@@ -65,47 +143,57 @@ export const GameControls: React.FC<GameControlsProps> = ({
   onHardDrop,
   onHold,
 }) => {
-  const moveIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const moveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const startMoving = (direction: 'left' | 'right') => {
-    const moveFunc = direction === 'left' ? onMoveLeft : onMoveRight;
-    moveFunc();
-    moveIntervalRef.current = setInterval(moveFunc, 100);
-  };
+  const startMovingLeft = useCallback(() => {
+    // 長押し開始時に連続移動
+    moveIntervalRef.current = setInterval(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onMoveLeft();
+    }, 80);
+  }, [onMoveLeft]);
 
-  const stopMoving = () => {
+  const startMovingRight = useCallback(() => {
+    // 長押し開始時に連続移動
+    moveIntervalRef.current = setInterval(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onMoveRight();
+    }, 80);
+  }, [onMoveRight]);
+
+  const stopMoving = useCallback(() => {
     if (moveIntervalRef.current) {
       clearInterval(moveIntervalRef.current);
       moveIntervalRef.current = null;
     }
-  };
+  }, []);
 
   return (
     <View style={styles.container}>
       <View style={styles.leftControls}>
         <ControlButton
           onPress={onMoveLeft}
-          onPressIn={() => startMoving('left')}
-          onPressOut={stopMoving}
+          onLongPressStart={startMovingLeft}
+          onLongPressEnd={stopMoving}
           label="◀"
           size="large"
         />
         <ControlButton
           onPress={onMoveRight}
-          onPressIn={() => startMoving('right')}
-          onPressOut={stopMoving}
+          onLongPressStart={startMovingRight}
+          onLongPressEnd={stopMoving}
           label="▶"
           size="large"
         />
       </View>
 
       <View style={styles.centerControls}>
-        <ControlButton
+        <SimpleButton
           onPress={onSoftDrop}
           label="▼"
           size="medium"
         />
-        <ControlButton
+        <SimpleButton
           onPress={onHardDrop}
           label="⬇"
           size="large"
@@ -114,12 +202,12 @@ export const GameControls: React.FC<GameControlsProps> = ({
       </View>
 
       <View style={styles.rightControls}>
-        <ControlButton
+        <SimpleButton
           onPress={onRotate}
           label="↻"
           size="large"
         />
-        <ControlButton
+        <SimpleButton
           onPress={onHold}
           label="H"
           size="medium"

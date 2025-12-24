@@ -5,14 +5,40 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
-import { TETROMINO_SHAPES, TetrominoType } from '@/constants/game';
+import { 
+  TETROMINO_SHAPES, 
+  SPECIAL_TETROMINO_SHAPES,
+  TetrominoType, 
+  AllTetrominoType,
+  SPECIAL_TETROMINOS,
+} from '@/constants/game';
 import { TetrominoColors, GameColors } from '@/constants/theme';
 
 interface HoldPieceProps {
-  piece: TetrominoType | null;
+  piece: AllTetrominoType | null;
   canHold: boolean;
   cellSize?: number;
 }
+
+// 通常テトリミノの種類
+const NORMAL_TETROMINOS: TetrominoType[] = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+
+// テトリミノの形状を取得
+const getShape = (type: AllTetrominoType): number[][] => {
+  if (NORMAL_TETROMINOS.includes(type as TetrominoType)) {
+    return TETROMINO_SHAPES[type as TetrominoType][0];
+  }
+  return SPECIAL_TETROMINO_SHAPES[0];
+};
+
+// テトリミノの色を取得
+const getColor = (type: AllTetrominoType): string => {
+  if (NORMAL_TETROMINOS.includes(type as TetrominoType)) {
+    return TetrominoColors[type as TetrominoType];
+  }
+  const specialMino = SPECIAL_TETROMINOS.find(s => s.id === type);
+  return specialMino?.color || '#FFFFFF';
+};
 
 export const HoldPiece: React.FC<HoldPieceProps> = ({ piece, canHold, cellSize = 10 }) => {
   return (
@@ -21,7 +47,7 @@ export const HoldPiece: React.FC<HoldPieceProps> = ({ piece, canHold, cellSize =
       <View style={styles.pieceWrapper}>
         {piece ? (
           <View style={styles.miniPieceContainer}>
-            {TETROMINO_SHAPES[piece][0].map((row, rowIndex) => (
+            {getShape(piece).map((row, rowIndex) => (
               <View key={rowIndex} style={styles.miniRow}>
                 {row.map((cell, colIndex) => (
                   <View
@@ -31,7 +57,7 @@ export const HoldPiece: React.FC<HoldPieceProps> = ({ piece, canHold, cellSize =
                       {
                         width: cellSize,
                         height: cellSize,
-                        backgroundColor: cell ? TetrominoColors[piece] : 'transparent',
+                        backgroundColor: cell ? getColor(piece) : 'transparent',
                         borderWidth: cell ? 1 : 0,
                         borderColor: cell ? 'rgba(255, 255, 255, 0.3)' : 'transparent',
                         opacity: canHold ? 1 : 0.5,

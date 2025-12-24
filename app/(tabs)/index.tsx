@@ -2,7 +2,7 @@
  * テトリスローグライク - メインゲーム画面
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef, useEffect } from 'react';
 import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -18,12 +18,14 @@ import { TitleScreen } from '@/components/game/TitleScreen';
 import { GameOverScreen } from '@/components/game/GameOverScreen';
 import { PowerUpSelection } from '@/components/game/PowerUpSelection';
 import { useGameState } from '@/hooks/use-game-state';
+import { useSound, SoundType } from '@/hooks/use-sound';
 import { GRID_WIDTH, GRID_HEIGHT } from '@/constants/game';
 import { Colors } from '@/constants/theme';
 
 export default function GameScreen() {
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const { playSound } = useSound();
   
   const {
     gameData,
@@ -36,6 +38,61 @@ export default function GameScreen() {
     selectPowerUp,
     goToTitle,
   } = useGameState();
+
+  // 前回の状態を追跡
+  const prevLinesRef = useRef(gameData.linesCleared);
+  const prevComboRef = useRef(gameData.combo);
+  const prevEnemyHpRef = useRef(gameData.enemy?.currentHp ?? 0);
+  const prevStageRef = useRef(gameData.stage);
+
+  // 効果音を再生
+  useEffect(() => {
+    // ライン消去音
+    if (gameData.linesCleared > prevLinesRef.current) {
+      const linesCleared = gameData.linesCleared - prevLinesRef.current;
+      if (linesCleared >= 4) {
+        playSound('tetris');
+      } else {
+        playSound('lineClear');
+      }
+    }
+    prevLinesRef.current = gameData.linesCleared;
+  }, [gameData.linesCleared, playSound]);
+
+  useEffect(() => {
+    // コンボ音
+    if (gameData.combo > prevComboRef.current && gameData.combo > 1) {
+      playSound('combo');
+    }
+    prevComboRef.current = gameData.combo;
+  }, [gameData.combo, playSound]);
+
+  useEffect(() => {
+    // 敵へのダメージ音
+    if (gameData.enemy && gameData.enemy.currentHp < prevEnemyHpRef.current) {
+      if (gameData.enemy.currentHp <= 0) {
+        playSound('enemyDefeat');
+      } else {
+        playSound('enemyDamage');
+      }
+    }
+    prevEnemyHpRef.current = gameData.enemy?.currentHp ?? 0;
+  }, [gameData.enemy?.currentHp, playSound]);
+
+  useEffect(() => {
+    // ステージ開始音
+    if (gameData.stage > prevStageRef.current) {
+      playSound('stageStart');
+    }
+    prevStageRef.current = gameData.stage;
+  }, [gameData.stage, playSound]);
+
+  useEffect(() => {
+    // ゲームオーバー音
+    if (gameData.gameState === 'gameover') {
+      playSound('gameOver');
+    }
+  }, [gameData.gameState, playSound]);
 
   // セルサイズを画面サイズに基づいて計算
   const cellSize = useMemo(() => {
@@ -63,6 +120,7 @@ export default function GameScreen() {
       
       // 下方向への高速スワイプ = ハードドロップ
       if (velocityY > 1000 && Math.abs(translationY) > Math.abs(translationX)) {
+        playSound('hardDrop');
         hardDrop();
         return;
       }
@@ -70,17 +128,21 @@ export default function GameScreen() {
       // 横方向のスワイプ
       if (Math.abs(translationX) > Math.abs(translationY)) {
         if (translationX > 30) {
+          playSound('move');
           movePiece(1, 0);
         } else if (translationX < -30) {
+          playSound('move');
           movePiece(-1, 0);
         }
       }
       // 下方向のスワイプ = ソフトドロップ
       else if (translationY > 30) {
+        playSound('drop');
         movePiece(0, 1);
       }
       // 上方向のスワイプ = ホールド
       else if (translationY < -30) {
+        playSound('hold');
         holdPiece();
       }
     });
@@ -88,18 +150,48 @@ export default function GameScreen() {
   const tapGesture = Gesture.Tap()
     .onEnd(() => {
       if (gameData.gameState !== 'playing') return;
+      playSound('rotate');
       rotatePiece(1);
     });
 
   const combinedGesture = Gesture.Race(swipeGesture, tapGesture);
 
-  // コントロールハンドラー
-  const handleMoveLeft = useCallback(() => movePiece(-1, 0), [movePiece]);
-  const handleMoveRight = useCallback(() => movePiece(1, 0), [movePiece]);
-  const handleRotate = useCallback(() => rotatePiece(1), [rotatePiece]);
-  const handleSoftDrop = useCallback(() => movePiece(0, 1), [movePiece]);
-  const handleHardDrop = useCallback(() => hardDrop(), [hardDrop]);
-  const handleHold = useCallback(() => holdPiece(), [holdPiece]);
+  // コントロールハンドラー（ワンタップで1マス移動）
+  const handleMoveLeft = useCallback(() => {
+    playSound('move');
+    movePiece(-1, 0);
+  }, [movePiece, playSound]);
+  
+  const handleMoveRight = useCallback(() => {
+    playSound('move');
+    movePiece(1, 0);
+  }, [movePiece, playSound]);
+  
+  const handleRotate = useCallback(() => {
+    playSound('rotate');
+    rotatePiece(1);
+  }, [rotatePiece, playSound]);
+  
+  const handleSoftDrop = useCallback(() => {
+    playSound('drop');
+    movePiece(0, 1);
+  }, [movePiece, playSound]);
+  
+  const handleHardDrop = useCallback(() => {
+    playSound('hardDrop');
+    hardDrop();
+  }, [hardDrop, playSound]);
+  
+  const handleHold = useCallback(() => {
+    playSound('hold');
+    holdPiece();
+  }, [holdPiece, playSound]);
+
+  // パワーアップ選択時
+  const handleSelectPowerUp = useCallback((powerUp: any) => {
+    playSound('powerUp');
+    selectPowerUp(powerUp);
+  }, [selectPowerUp, playSound]);
 
   // タイトル画面
   if (gameData.gameState === 'title') {
@@ -121,7 +213,11 @@ export default function GameScreen() {
           <View style={styles.gameArea}>
             {/* 左側: 敵とホールド */}
             <View style={styles.leftPanel}>
-              <EnemyDisplay enemy={gameData.enemy} />
+              <EnemyDisplay 
+                enemy={gameData.enemy} 
+                attackTimer={gameData.attackTimerProgress}
+                isFrozen={gameData.enemy?.isFrozen ?? false}
+              />
               <HoldPiece
                 piece={gameData.holdPiece}
                 canHold={gameData.canHold}
@@ -167,7 +263,7 @@ export default function GameScreen() {
         {/* パワーアップ選択画面 */}
         {gameData.gameState === 'powerup' && (
           <PowerUpSelection
-            onSelect={selectPowerUp}
+            onSelect={handleSelectPowerUp}
             currentPowerUps={gameData.powerUps}
           />
         )}

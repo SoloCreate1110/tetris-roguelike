@@ -4,7 +4,14 @@
 
 import React, { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { GRID_WIDTH, GRID_HEIGHT, TETROMINO_SHAPES, TetrominoType } from '@/constants/game';
+import { 
+  GRID_WIDTH, 
+  GRID_HEIGHT, 
+  TETROMINO_SHAPES, 
+  SPECIAL_TETROMINO_SHAPES,
+  TetrominoType,
+  SPECIAL_TETROMINOS,
+} from '@/constants/game';
 import { TetrominoColors, GameColors } from '@/constants/theme';
 import { CellState, CurrentPiece } from '@/hooks/use-game-state';
 
@@ -14,6 +21,27 @@ interface TetrisGridProps {
   ghostY: number;
   cellSize: number;
 }
+
+// 通常テトリミノの種類
+const NORMAL_TETROMINOS: TetrominoType[] = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+
+// テトリミノの形状を取得
+const getShape = (piece: CurrentPiece): number[][] => {
+  if (NORMAL_TETROMINOS.includes(piece.type as TetrominoType)) {
+    return TETROMINO_SHAPES[piece.type as TetrominoType][piece.rotation];
+  }
+  // 特殊ミノはTミノの形状を使用
+  return SPECIAL_TETROMINO_SHAPES[piece.rotation];
+};
+
+// テトリミノの色を取得
+const getColor = (piece: CurrentPiece): string => {
+  if (NORMAL_TETROMINOS.includes(piece.type as TetrominoType)) {
+    return TetrominoColors[piece.type as TetrominoType];
+  }
+  const specialMino = SPECIAL_TETROMINOS.find(s => s.id === piece.type);
+  return specialMino?.color || '#FFFFFF';
+};
 
 export const TetrisGrid: React.FC<TetrisGridProps> = ({
   grid,
@@ -26,8 +54,8 @@ export const TetrisGrid: React.FC<TetrisGridProps> = ({
     const result = grid.map((row) => row.map((cell) => ({ ...cell })));
 
     if (currentPiece) {
-      const shape = TETROMINO_SHAPES[currentPiece.type][currentPiece.rotation];
-      const color = TetrominoColors[currentPiece.type];
+      const shape = getShape(currentPiece);
+      const color = getColor(currentPiece);
 
       // ゴーストピースを描画
       for (let row = 0; row < shape.length; row++) {

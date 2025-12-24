@@ -7,17 +7,22 @@ import {
   GRID_WIDTH,
   GRID_HEIGHT,
   TETROMINO_SHAPES,
+  SPECIAL_TETROMINO_SHAPES,
   TetrominoType,
+  SpecialTetrominoType,
+  AllTetrominoType,
   WALL_KICK_DATA,
   INITIAL_DROP_INTERVAL,
-  SOFT_DROP_INTERVAL,
   LOCK_DELAY,
   SCORE_PER_LINE,
   DAMAGE_PER_LINE,
   COMBO_BONUS_PERCENT,
   ENEMIES,
+  STAGE_ENEMIES,
   EnemyType,
   PowerUp,
+  SPECIAL_TETROMINOS,
+  SpecialTetromino,
 } from '@/constants/game';
 import { TetrominoColors } from '@/constants/theme';
 
@@ -26,14 +31,17 @@ export type CellState = {
   filled: boolean;
   color: string;
   isGarbage: boolean;
+  specialType?: SpecialTetrominoType;
 };
 
 // 現在のテトリミノの状態
 export type CurrentPiece = {
-  type: TetrominoType;
+  type: AllTetrominoType;
   x: number;
   y: number;
   rotation: number;
+  isSpecial: boolean;
+  specialData?: SpecialTetromino;
 };
 
 // 敵の状態
@@ -41,6 +49,8 @@ export type EnemyState = {
   type: EnemyType;
   currentHp: number;
   attackTimer: number;
+  isFrozen: boolean;
+  frozenUntil: number;
 };
 
 // ゲームの状態
@@ -50,8 +60,8 @@ export type GameState = 'title' | 'playing' | 'paused' | 'powerup' | 'gameover';
 export interface GameData {
   grid: CellState[][];
   currentPiece: CurrentPiece | null;
-  nextPieces: TetrominoType[];
-  holdPiece: TetrominoType | null;
+  nextPieces: AllTetrominoType[];
+  holdPiece: AllTetrominoType | null;
   canHold: boolean;
   score: number;
   level: number;
@@ -61,11 +71,28 @@ export interface GameData {
   gameState: GameState;
   powerUps: PowerUp[];
   stage: number;
+  unlockedSpecialMinos: SpecialTetrominoType[];
+  attackTimerProgress: number; // 0-1の値
 }
 
-// 7-bag方式でテトリミノを生成
-const generateBag = (): TetrominoType[] => {
-  const pieces: TetrominoType[] = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+// 通常テトリミノの種類
+const NORMAL_TETROMINOS: TetrominoType[] = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+
+// 7-bag方式でテトリミノを生成（特殊ミノも含む）
+const generateBag = (unlockedSpecialMinos: SpecialTetrominoType[]): AllTetrominoType[] => {
+  const pieces: AllTetrominoType[] = [...NORMAL_TETROMINOS];
+  
+  // 解放された特殊ミノを確率で追加
+  unlockedSpecialMinos.forEach(specialType => {
+    const specialMino = SPECIAL_TETROMINOS.find(s => s.id === specialType);
+    if (specialMino) {
+      // 出現確率に基づいて追加（100分のspawnWeight%の確率）
+      if (Math.random() * 100 < specialMino.spawnWeight) {
+        pieces.push(specialType);
+      }
+    }
+  });
+  
   // Fisher-Yatesシャッフル
   for (let i = pieces.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -86,8 +113,21 @@ const createEmptyGrid = (): CellState[][] => {
 };
 
 // テトリミノの形状を取得
-const getShape = (type: TetrominoType, rotation: number): number[][] => {
-  return TETROMINO_SHAPES[type][rotation];
+const getShape = (type: AllTetrominoType, rotation: number): number[][] => {
+  if (NORMAL_TETROMINOS.includes(type as TetrominoType)) {
+    return TETROMINO_SHAPES[type as TetrominoType][rotation];
+  }
+  // 特殊ミノはTミノの形状を使用
+  return SPECIAL_TETROMINO_SHAPES[rotation];
+};
+
+// テトリミノの色を取得
+const getColor = (type: AllTetrominoType): string => {
+  if (NORMAL_TETROMINOS.includes(type as TetrominoType)) {
+    return TetrominoColors[type as TetrominoType];
+  }
+  const specialMino = SPECIAL_TETROMINOS.find(s => s.id === type);
+  return specialMino?.color || '#FFFFFF';
 };
 
 // 衝突判定
@@ -138,38 +178,47 @@ export const useGameState = () => {
     gameState: 'title',
     powerUps: [],
     stage: 1,
+    unlockedSpecialMinos: [],
+    attackTimerProgress: 0,
   });
 
-  const bagRef = useRef<TetrominoType[]>([]);
+  const bagRef = useRef<AllTetrominoType[]>([]);
   const dropTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enemyTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const attackProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastClearTimeRef = useRef<number>(0);
+  const enemyAttackStartRef = useRef<number>(0);
 
   // 次のテトリミノを取得
-  const getNextPiece = useCallback((): TetrominoType => {
+  const getNextPiece = useCallback((unlockedSpecialMinos: SpecialTetrominoType[]): AllTetrominoType => {
     if (bagRef.current.length === 0) {
-      bagRef.current = generateBag();
+      bagRef.current = generateBag(unlockedSpecialMinos);
     }
     return bagRef.current.shift()!;
   }, []);
 
   // 新しいテトリミノを生成
-  const spawnPiece = useCallback((nextPieces: TetrominoType[]): { piece: CurrentPiece; newNextPieces: TetrominoType[] } => {
+  const spawnPiece = useCallback((nextPieces: AllTetrominoType[], unlockedSpecialMinos: SpecialTetrominoType[]): { piece: CurrentPiece; newNextPieces: AllTetrominoType[] } => {
     const type = nextPieces[0];
     const newNextPieces = [...nextPieces.slice(1)];
     
     // 次のピースを補充
     while (newNextPieces.length < 3) {
-      newNextPieces.push(getNextPiece());
+      newNextPieces.push(getNextPiece(unlockedSpecialMinos));
     }
 
     const shape = getShape(type, 0);
+    const isSpecial = !NORMAL_TETROMINOS.includes(type as TetrominoType);
+    const specialData = isSpecial ? SPECIAL_TETROMINOS.find(s => s.id === type) : undefined;
+    
     const piece: CurrentPiece = {
       type,
       x: Math.floor((GRID_WIDTH - shape[0].length) / 2),
       y: -1,
       rotation: 0,
+      isSpecial,
+      specialData,
     };
 
     return { piece, newNextPieces };
@@ -178,13 +227,13 @@ export const useGameState = () => {
   // ゲーム開始
   const startGame = useCallback(() => {
     // 初期のネクストピースを生成
-    bagRef.current = generateBag();
-    const initialNextPieces: TetrominoType[] = [];
+    bagRef.current = generateBag([]);
+    const initialNextPieces: AllTetrominoType[] = [];
     for (let i = 0; i < 4; i++) {
-      initialNextPieces.push(getNextPiece());
+      initialNextPieces.push(getNextPiece([]));
     }
 
-    const { piece, newNextPieces } = spawnPiece(initialNextPieces);
+    const { piece, newNextPieces } = spawnPiece(initialNextPieces, []);
     
     // 敵を生成
     const enemyType = ENEMIES.slime;
@@ -192,7 +241,11 @@ export const useGameState = () => {
       type: enemyType,
       currentHp: enemyType.maxHp,
       attackTimer: enemyType.attackInterval,
+      isFrozen: false,
+      frozenUntil: 0,
     };
+
+    enemyAttackStartRef.current = Date.now();
 
     setGameData({
       grid: createEmptyGrid(),
@@ -208,26 +261,120 @@ export const useGameState = () => {
       gameState: 'playing',
       powerUps: [],
       stage: 1,
+      unlockedSpecialMinos: [],
+      attackTimerProgress: 0,
     });
   }, [getNextPiece, spawnPiece]);
+
+  // 特殊ミノの効果を処理
+  const processSpecialEffect = useCallback((
+    specialType: SpecialTetrominoType,
+    grid: CellState[][],
+    enemy: EnemyState | null,
+    clearedRows: number[]
+  ): { grid: CellState[][]; enemy: EnemyState | null; bonusDamage: number } => {
+    const specialMino = SPECIAL_TETROMINOS.find(s => s.id === specialType);
+    if (!specialMino) return { grid, enemy, bonusDamage: 0 };
+
+    let newGrid = grid.map(row => row.map(cell => ({ ...cell })));
+    let newEnemy = enemy ? { ...enemy } : null;
+    let bonusDamage = 0;
+
+    // 効果発動判定
+    if (Math.random() < specialMino.effect.chance) {
+      switch (specialMino.effect.type) {
+        case 'damage':
+          bonusDamage = specialMino.effect.value;
+          break;
+        
+        case 'freeze':
+          if (newEnemy) {
+            newEnemy.isFrozen = true;
+            newEnemy.frozenUntil = Date.now() + specialMino.effect.value;
+          }
+          break;
+        
+        case 'explosion':
+          // 消去した行の周囲1マスも消去
+          clearedRows.forEach(row => {
+            for (let r = Math.max(0, row - 1); r <= Math.min(GRID_HEIGHT - 1, row + 1); r++) {
+              for (let c = 0; c < GRID_WIDTH; c++) {
+                newGrid[r][c] = { filled: false, color: '', isGarbage: false };
+              }
+            }
+          });
+          break;
+        
+        case 'chain':
+          // ランダムな縦1列を消去
+          const col = Math.floor(Math.random() * GRID_WIDTH);
+          for (let r = 0; r < GRID_HEIGHT; r++) {
+            newGrid[r][col] = { filled: false, color: '', isGarbage: false };
+          }
+          break;
+      }
+    }
+
+    return { grid: newGrid, enemy: newEnemy, bonusDamage };
+  }, []);
+
+  // 砂ミノの重力効果
+  const applySandGravity = useCallback((grid: CellState[][], piece: CurrentPiece): CellState[][] => {
+    if (piece.type !== 'SAND') return grid;
+
+    const newGrid = grid.map(row => row.map(cell => ({ ...cell })));
+    const shape = getShape(piece.type, piece.rotation);
+    const color = getColor(piece.type);
+
+    // 砂ミノの各ブロックを下に落とす
+    for (let col = 0; col < shape[0].length; col++) {
+      for (let row = shape.length - 1; row >= 0; row--) {
+        if (shape[row][col]) {
+          const gridX = piece.x + col;
+          let gridY = piece.y + row;
+
+          // 下に落ちれるところまで落とす
+          while (gridY + 1 < GRID_HEIGHT && !newGrid[gridY + 1][gridX].filled) {
+            gridY++;
+          }
+
+          if (gridY >= 0 && gridY < GRID_HEIGHT && gridX >= 0 && gridX < GRID_WIDTH) {
+            newGrid[gridY][gridX] = { filled: true, color, isGarbage: false, specialType: 'SAND' };
+          }
+        }
+      }
+    }
+
+    return newGrid;
+  }, []);
 
   // テトリミノを固定
   const lockPiece = useCallback(() => {
     setGameData((prev) => {
       if (!prev.currentPiece || prev.gameState !== 'playing') return prev;
 
-      const newGrid = prev.grid.map((row) => row.map((cell) => ({ ...cell })));
+      let newGrid = prev.grid.map((row) => row.map((cell) => ({ ...cell })));
       const shape = getShape(prev.currentPiece.type, prev.currentPiece.rotation);
-      const color = TetrominoColors[prev.currentPiece.type];
+      const color = getColor(prev.currentPiece.type);
 
-      // テトリミノをグリッドに固定
-      for (let row = 0; row < shape.length; row++) {
-        for (let col = 0; col < shape[row].length; col++) {
-          if (shape[row][col]) {
-            const gridY = prev.currentPiece.y + row;
-            const gridX = prev.currentPiece.x + col;
-            if (gridY >= 0 && gridY < GRID_HEIGHT && gridX >= 0 && gridX < GRID_WIDTH) {
-              newGrid[gridY][gridX] = { filled: true, color, isGarbage: false };
+      // 砂ミノの場合は重力効果を適用
+      if (prev.currentPiece.type === 'SAND') {
+        newGrid = applySandGravity(newGrid, prev.currentPiece);
+      } else {
+        // 通常のテトリミノをグリッドに固定
+        for (let row = 0; row < shape.length; row++) {
+          for (let col = 0; col < shape[row].length; col++) {
+            if (shape[row][col]) {
+              const gridY = prev.currentPiece.y + row;
+              const gridX = prev.currentPiece.x + col;
+              if (gridY >= 0 && gridY < GRID_HEIGHT && gridX >= 0 && gridX < GRID_WIDTH) {
+                newGrid[gridY][gridX] = { 
+                  filled: true, 
+                  color, 
+                  isGarbage: false,
+                  specialType: prev.currentPiece.isSpecial ? prev.currentPiece.type as SpecialTetrominoType : undefined,
+                };
+              }
             }
           }
         }
@@ -235,9 +382,17 @@ export const useGameState = () => {
 
       // ライン消去チェック
       const linesToClear: number[] = [];
+      const specialTypesInClearedLines: SpecialTetrominoType[] = [];
+      
       for (let row = 0; row < GRID_HEIGHT; row++) {
         if (newGrid[row].every((cell) => cell.filled)) {
           linesToClear.push(row);
+          // 消去する行に含まれる特殊ミノをチェック
+          newGrid[row].forEach(cell => {
+            if (cell.specialType) {
+              specialTypesInClearedLines.push(cell.specialType);
+            }
+          });
         }
       }
 
@@ -254,6 +409,16 @@ export const useGameState = () => {
           );
         }
       }
+
+      // 特殊ミノの効果を処理
+      let bonusDamage = 0;
+      let processedEnemy = prev.enemy;
+      specialTypesInClearedLines.forEach(specialType => {
+        const result = processSpecialEffect(specialType, clearedGrid, processedEnemy, linesToClear);
+        clearedGrid = result.grid;
+        processedEnemy = result.enemy;
+        bonusDamage += result.bonusDamage;
+      });
 
       // コンボ計算
       const now = Date.now();
@@ -287,10 +452,13 @@ export const useGameState = () => {
         if (damageBoost) {
           damage = Math.floor(damage * (damageBoost.effect.damageMultiplier as number));
         }
+
+        // 特殊ミノのボーナスダメージを追加
+        damage += bonusDamage;
       }
 
       // 敵にダメージを与える
-      let newEnemy = prev.enemy;
+      let newEnemy = processedEnemy;
       let newGameState: GameState = prev.gameState;
       let newStage = prev.stage;
       if (newEnemy && damage > 0) {
@@ -307,7 +475,7 @@ export const useGameState = () => {
       }
 
       // 新しいテトリミノを生成
-      const { piece: newPiece, newNextPieces } = spawnPiece(prev.nextPieces);
+      const { piece: newPiece, newNextPieces } = spawnPiece(prev.nextPieces, prev.unlockedSpecialMinos);
 
       // ゲームオーバーチェック
       if (checkCollision(clearedGrid, newPiece)) {
@@ -337,7 +505,7 @@ export const useGameState = () => {
         stage: newStage,
       };
     });
-  }, [spawnPiece]);
+  }, [spawnPiece, applySandGravity, processSpecialEffect]);
 
   // テトリミノを移動
   const movePiece = useCallback((dx: number, dy: number) => {
@@ -364,23 +532,32 @@ export const useGameState = () => {
       if (!prev.currentPiece || prev.gameState !== 'playing') return prev;
 
       const newRotation = (prev.currentPiece.rotation + direction + 4) % 4;
-      const kickData = prev.currentPiece.type === 'I' ? WALL_KICK_DATA.I : WALL_KICK_DATA.JLSTZ;
-      const kickIndex = direction === 1 ? prev.currentPiece.rotation : (prev.currentPiece.rotation + 3) % 4;
+      const pieceType = prev.currentPiece.type;
+      
+      // ウォールキックデータを取得
+      const kickData = pieceType === 'I' 
+        ? WALL_KICK_DATA.I 
+        : WALL_KICK_DATA.JLSTZ;
+      
+      const kickIndex = direction === 1 
+        ? prev.currentPiece.rotation 
+        : (prev.currentPiece.rotation + 3) % 4;
 
       // ウォールキックを試行
-      for (const [kickX, kickY] of kickData[kickIndex]) {
-        if (!checkCollision(prev.grid, prev.currentPiece, kickX, -kickY, newRotation)) {
+      for (const [dx, dy] of kickData[kickIndex]) {
+        if (!checkCollision(prev.grid, prev.currentPiece, dx, -dy, newRotation)) {
           return {
             ...prev,
             currentPiece: {
               ...prev.currentPiece,
-              x: prev.currentPiece.x + kickX,
-              y: prev.currentPiece.y - kickY,
+              x: prev.currentPiece.x + dx,
+              y: prev.currentPiece.y - dy,
               rotation: newRotation,
             },
           };
         }
       }
+
       return prev;
     });
   }, []);
@@ -390,23 +567,24 @@ export const useGameState = () => {
     setGameData((prev) => {
       if (!prev.currentPiece || prev.gameState !== 'playing') return prev;
 
-      let dropDistance = 0;
-      while (!checkCollision(prev.grid, prev.currentPiece, 0, dropDistance + 1)) {
-        dropDistance++;
+      let newY = prev.currentPiece.y;
+      while (!checkCollision(prev.grid, prev.currentPiece, 0, newY - prev.currentPiece.y + 1)) {
+        newY++;
       }
 
       return {
         ...prev,
         currentPiece: {
           ...prev.currentPiece,
-          y: prev.currentPiece.y + dropDistance,
+          y: newY,
         },
-        score: prev.score + dropDistance * 2,
       };
     });
-    
-    // 即座に固定
-    setTimeout(lockPiece, 0);
+
+    // 即座にロック
+    setTimeout(() => {
+      lockPiece();
+    }, 0);
   }, [lockPiece]);
 
   // ホールド
@@ -419,26 +597,28 @@ export const useGameState = () => {
       if (prev.holdPiece) {
         // ホールドと交換
         const shape = getShape(prev.holdPiece, 0);
-        const newPiece: CurrentPiece = {
-          type: prev.holdPiece,
-          x: Math.floor((GRID_WIDTH - shape[0].length) / 2),
-          y: -1,
-          rotation: 0,
-        };
+        const isSpecial = !NORMAL_TETROMINOS.includes(prev.holdPiece as TetrominoType);
+        const specialData = isSpecial ? SPECIAL_TETROMINOS.find(s => s.id === prev.holdPiece) : undefined;
         
         return {
           ...prev,
-          currentPiece: newPiece,
+          currentPiece: {
+            type: prev.holdPiece,
+            x: Math.floor((GRID_WIDTH - shape[0].length) / 2),
+            y: 0,
+            rotation: 0,
+            isSpecial,
+            specialData,
+          },
           holdPiece: currentType,
           canHold: false,
         };
       } else {
-        // 新しいピースを生成
-        const { piece: newPiece, newNextPieces } = spawnPiece(prev.nextPieces);
-        
+        // 新しくホールド
+        const { piece, newNextPieces } = spawnPiece(prev.nextPieces, prev.unlockedSpecialMinos);
         return {
           ...prev,
-          currentPiece: newPiece,
+          currentPiece: piece,
           nextPieces: newNextPieces,
           holdPiece: currentType,
           canHold: false,
@@ -458,46 +638,33 @@ export const useGameState = () => {
     return ghostY;
   }, []);
 
-  // 敵の攻撃（おじゃまブロック配置）
+  // 敵の攻撃
   const enemyAttack = useCallback(() => {
     setGameData((prev) => {
       if (!prev.enemy || prev.gameState !== 'playing') return prev;
 
-      const newGrid = prev.grid.map((row) => row.map((cell) => ({ ...cell })));
-      const { garbageSize, attackPattern } = prev.enemy.type;
-
-      // 攻撃パターンに応じた位置を決定
-      let startX: number;
-      if (attackPattern === 'random') {
-        startX = Math.floor(Math.random() * (GRID_WIDTH - garbageSize.width));
-      } else if (attackPattern === 'targeted') {
-        // プレイヤーの積み上げが高い場所を狙う
-        let maxHeight = 0;
-        let targetX = 0;
-        for (let x = 0; x < GRID_WIDTH; x++) {
-          for (let y = 0; y < GRID_HEIGHT; y++) {
-            if (newGrid[y][x].filled) {
-              const height = GRID_HEIGHT - y;
-              if (height > maxHeight) {
-                maxHeight = height;
-                targetX = x;
-              }
-              break;
-            }
-          }
-        }
-        startX = Math.max(0, Math.min(targetX, GRID_WIDTH - garbageSize.width));
-      } else {
-        // column: ランダムな列に縦長のブロック
-        startX = Math.floor(Math.random() * GRID_WIDTH);
+      // 凍結中は攻撃しない
+      if (prev.enemy.isFrozen && Date.now() < prev.enemy.frozenUntil) {
+        return prev;
       }
 
-      // おじゃまブロックを配置（上から落とす）
-      for (let dx = 0; dx < garbageSize.width; dx++) {
-        for (let dy = 0; dy < garbageSize.height; dy++) {
-          const x = startX + dx;
-          if (x >= 0 && x < GRID_WIDTH) {
-            // 空いている一番下の位置を探す
+      // 凍結解除
+      const newEnemy = {
+        ...prev.enemy,
+        isFrozen: false,
+        frozenUntil: 0,
+      };
+
+      const newGrid = prev.grid.map((row) => row.map((cell) => ({ ...cell })));
+      const { width, height } = prev.enemy.type.garbageSize;
+      const pattern = prev.enemy.type.attackPattern;
+
+      // 攻撃パターンに応じておじゃまブロックを配置
+      if (pattern === 'random') {
+        // ランダムな位置に配置
+        for (let i = 0; i < width; i++) {
+          const x = Math.floor(Math.random() * GRID_WIDTH);
+          for (let dy = 0; dy < height; dy++) {
             let targetY = GRID_HEIGHT - 1;
             for (let y = 0; y < GRID_HEIGHT; y++) {
               if (newGrid[y][x].filled) {
@@ -515,11 +682,59 @@ export const useGameState = () => {
             }
           }
         }
+      } else if (pattern === 'targeted') {
+        // 現在のピースの位置を狙う
+        const targetX = prev.currentPiece ? prev.currentPiece.x : Math.floor(GRID_WIDTH / 2);
+        for (let dx = 0; dx < width; dx++) {
+          const x = Math.min(GRID_WIDTH - 1, Math.max(0, targetX + dx));
+          for (let dy = 0; dy < height; dy++) {
+            let targetY = GRID_HEIGHT - 1;
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+              if (newGrid[y][x].filled) {
+                targetY = y - 1;
+                break;
+              }
+            }
+            
+            if (targetY - dy >= 0) {
+              newGrid[targetY - dy][x] = {
+                filled: true,
+                color: TetrominoColors.GARBAGE,
+                isGarbage: true,
+              };
+            }
+          }
+        }
+      } else if (pattern === 'column') {
+        // 同じ列に積み上げる
+        const x = Math.floor(Math.random() * GRID_WIDTH);
+        for (let dy = 0; dy < height; dy++) {
+          let targetY = GRID_HEIGHT - 1;
+          for (let y = 0; y < GRID_HEIGHT; y++) {
+            if (newGrid[y][x].filled) {
+              targetY = y - 1;
+              break;
+            }
+          }
+          
+          if (targetY - dy >= 0) {
+            newGrid[targetY - dy][x] = {
+              filled: true,
+              color: TetrominoColors.GARBAGE,
+              isGarbage: true,
+            };
+          }
+        }
       }
+
+      // 攻撃タイマーをリセット
+      enemyAttackStartRef.current = Date.now();
 
       return {
         ...prev,
         grid: newGrid,
+        enemy: newEnemy,
+        attackTimerProgress: 0,
       };
     });
   }, []);
@@ -527,19 +742,40 @@ export const useGameState = () => {
   // パワーアップを選択
   const selectPowerUp = useCallback((powerUp: PowerUp) => {
     setGameData((prev) => {
+      // 特殊ミノ解放の処理
+      let newUnlockedSpecialMinos = [...prev.unlockedSpecialMinos];
+      if (powerUp.type === 'tetromino' && powerUp.effect.unlockTetromino) {
+        const minoType = powerUp.effect.unlockTetromino as SpecialTetrominoType;
+        if (!newUnlockedSpecialMinos.includes(minoType)) {
+          newUnlockedSpecialMinos.push(minoType);
+        }
+      }
+
       // 次の敵を生成
-      const enemyKeys = Object.keys(ENEMIES);
-      const enemyIndex = Math.min(prev.stage - 1, enemyKeys.length - 1);
-      const enemyType = ENEMIES[enemyKeys[enemyIndex]];
+      const enemyIndex = Math.min(prev.stage - 1, STAGE_ENEMIES.length - 1);
+      const enemyId = STAGE_ENEMIES[enemyIndex];
+      const enemyType = ENEMIES[enemyId];
       
       const newEnemy: EnemyState = {
         type: enemyType,
         currentHp: enemyType.maxHp,
         attackTimer: enemyType.attackInterval,
+        isFrozen: false,
+        frozenUntil: 0,
       };
 
+      enemyAttackStartRef.current = Date.now();
+
       // 新しいピースを生成
-      const { piece, newNextPieces } = spawnPiece(prev.nextPieces);
+      bagRef.current = generateBag(newUnlockedSpecialMinos);
+      const initialNextPieces: AllTetrominoType[] = [];
+      for (let i = 0; i < 4; i++) {
+        if (bagRef.current.length === 0) {
+          bagRef.current = generateBag(newUnlockedSpecialMinos);
+        }
+        initialNextPieces.push(bagRef.current.shift()!);
+      }
+      const { piece, newNextPieces } = spawnPiece(initialNextPieces, newUnlockedSpecialMinos);
 
       return {
         ...prev,
@@ -549,6 +785,8 @@ export const useGameState = () => {
         gameState: 'playing',
         powerUps: [...prev.powerUps, powerUp],
         grid: createEmptyGrid(),
+        unlockedSpecialMinos: newUnlockedSpecialMinos,
+        attackTimerProgress: 0,
       };
     });
   }, [spawnPiece]);
@@ -614,6 +852,10 @@ export const useGameState = () => {
         clearInterval(enemyTimerRef.current);
         enemyTimerRef.current = null;
       }
+      if (attackProgressTimerRef.current) {
+        clearInterval(attackProgressTimerRef.current);
+        attackProgressTimerRef.current = null;
+      }
       return;
     }
 
@@ -623,9 +865,32 @@ export const useGameState = () => {
       enemyAttack();
     }, attackInterval);
 
+    // 攻撃タイマーの進行度を更新
+    attackProgressTimerRef.current = setInterval(() => {
+      setGameData((prev) => {
+        if (!prev.enemy || prev.gameState !== 'playing') return prev;
+        
+        // 凍結中は進行しない
+        if (prev.enemy.isFrozen && Date.now() < prev.enemy.frozenUntil) {
+          return prev;
+        }
+
+        const elapsed = Date.now() - enemyAttackStartRef.current;
+        const progress = Math.min(1, elapsed / prev.enemy.type.attackInterval);
+        
+        return {
+          ...prev,
+          attackTimerProgress: progress,
+        };
+      });
+    }, 100);
+
     return () => {
       if (enemyTimerRef.current) {
         clearInterval(enemyTimerRef.current);
+      }
+      if (attackProgressTimerRef.current) {
+        clearInterval(attackProgressTimerRef.current);
       }
     };
   }, [gameData.gameState, gameData.enemy?.type.id, enemyAttack]);
