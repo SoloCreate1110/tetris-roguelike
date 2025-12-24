@@ -25,7 +25,6 @@ import {
   SpecialTetromino,
 } from '@/constants/game';
 import { TetrominoColors } from '@/constants/theme';
-import { applySpecialMinoEffect } from '@/lib/special-mino-effects';
 
 // セルの状態
 export type CellState = {
@@ -272,11 +271,51 @@ export const useGameState = () => {
     specialType: SpecialTetrominoType,
     grid: CellState[][],
     enemy: EnemyState | null,
-    clearedRows: number[],
-    blockCount: number
-  ): { grid: CellState[][]; enemy: EnemyState | null; bonusDamage: number; freezeTime: number } => {
-    const result = applySpecialMinoEffect(specialType, grid, clearedRows, enemy, blockCount);
-    return result;
+    clearedRows: number[]
+  ): { grid: CellState[][]; enemy: EnemyState | null; bonusDamage: number } => {
+    const specialMino = SPECIAL_TETROMINOS.find(s => s.id === specialType);
+    if (!specialMino) return { grid, enemy, bonusDamage: 0 };
+
+    let newGrid = grid.map(row => row.map(cell => ({ ...cell })));
+    let newEnemy = enemy ? { ...enemy } : null;
+    let bonusDamage = 0;
+
+    // 効果発動判定
+    if (Math.random() < specialMino.effect.chance) {
+      switch (specialMino.effect.type) {
+        case 'damage':
+          bonusDamage = specialMino.effect.value;
+          break;
+        
+        case 'freeze':
+          if (newEnemy) {
+            newEnemy.isFrozen = true;
+            newEnemy.frozenUntil = Date.now() + specialMino.effect.value;
+          }
+          break;
+        
+        case 'explosion':
+          // 消去した行の周囲1マスも消去
+          clearedRows.forEach(row => {
+            for (let r = Math.max(0, row - 1); r <= Math.min(GRID_HEIGHT - 1, row + 1); r++) {
+              for (let c = 0; c < GRID_WIDTH; c++) {
+                newGrid[r][c] = { filled: false, color: '', isGarbage: false };
+              }
+            }
+          });
+          break;
+        
+        case 'chain':
+          // ランダムな縦1列を消去
+          const col = Math.floor(Math.random() * GRID_WIDTH);
+          for (let r = 0; r < GRID_HEIGHT; r++) {
+            newGrid[r][col] = { filled: false, color: '', isGarbage: false };
+          }
+          break;
+      }
+    }
+
+    return { grid: newGrid, enemy: newEnemy, bonusDamage };
   }, []);
 
   // 砂ミノの重力効果
@@ -374,24 +413,12 @@ export const useGameState = () => {
       // 特殊ミノの効果を処理
       let bonusDamage = 0;
       let processedEnemy = prev.enemy;
-      let totalFreezeTime = 0;
-      
-      // 消去されたブロック数をカウント
-      const totalBlocksCleared = linesToClear.length * GRID_WIDTH;
-      
       specialTypesInClearedLines.forEach(specialType => {
-        const result = processSpecialEffect(specialType, clearedGrid, processedEnemy, linesToClear, totalBlocksCleared);
+        const result = processSpecialEffect(specialType, clearedGrid, processedEnemy, linesToClear);
         clearedGrid = result.grid;
         processedEnemy = result.enemy;
         bonusDamage += result.bonusDamage;
-        totalFreezeTime += result.freezeTime;
       });
-      
-      // 凍結時間を敵に反映
-      if (totalFreezeTime > 0 && processedEnemy) {
-        processedEnemy.isFrozen = true;
-        processedEnemy.frozenUntil = Date.now() + totalFreezeTime;
-      }
 
       // コンボ計算
       const now = Date.now();
@@ -421,10 +448,12 @@ export const useGameState = () => {
         damage = Math.floor(damage * comboMultiplier);
         
         // パワーアップによるダメージ増加
-        const damageBoost = prev.powerUps.filter(p => p.id === 'damage_boost').length;
-        damage = Math.floor(damage * (1 + damageBoost * 0.2));
-        
-        // 特殊ミノボーナスダメージを追加
+        const damageBoost = prev.powerUps.find(p => p.id === 'damage_boost');
+        if (damageBoost) {
+          damage = Math.floor(damage * (damageBoost.effect.damageMultiplier as number));
+        }
+
+        // 特殊ミノのボーナスダメージを追加
         damage += bonusDamage;
       }
 
@@ -432,29 +461,40 @@ export const useGameState = () => {
       let newEnemy = processedEnemy;
       let newGameState: GameState = prev.gameState;
       let newStage = prev.stage;
-
       if (newEnemy && damage > 0) {
-        newEnemy.currentHp -= damage;
+        newEnemy = {
+          ...newEnemy,
+          currentHp: Math.max(0, newEnemy.currentHp - damage),
+        };
         
-        // 敵が倒された
+        // 敵を倒した場合
         if (newEnemy.currentHp <= 0) {
           newGameState = 'powerup';
           newStage = prev.stage + 1;
         }
       }
 
-      // 次のピースを生成
-      const { piece: nextPiece, newNextPieces } = spawnPiece(prev.nextPieces, prev.unlockedSpecialMinos);
+      // 新しいテトリミノを生成
+      const { piece: newPiece, newNextPieces } = spawnPiece(prev.nextPieces, prev.unlockedSpecialMinos);
 
       // ゲームオーバーチェック
-      if (checkCollision(clearedGrid, nextPiece)) {
-        newGameState = 'gameover';
+      if (checkCollision(clearedGrid, newPiece)) {
+        return {
+          ...prev,
+          grid: clearedGrid,
+          currentPiece: null,
+          gameState: 'gameover',
+          score: prev.score + scoreGain,
+          linesCleared: prev.linesCleared + linesToClear.length,
+          combo: newCombo,
+          enemy: newEnemy,
+        };
       }
 
       return {
         ...prev,
         grid: clearedGrid,
-        currentPiece: nextPiece,
+        currentPiece: newPiece,
         nextPieces: newNextPieces,
         canHold: true,
         score: prev.score + scoreGain,
