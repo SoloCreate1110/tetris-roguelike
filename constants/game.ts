@@ -197,8 +197,8 @@ export const SPECIAL_TETROMINOS: SpecialTetromino[] = [
     description: '消去時30%で追加ダメージ+50',
     color: '#FF4500',
     rarity: 'uncommon',
-    spawnWeight: 15,
-    effect: { type: 'damage', chance: 0.3, value: 50 },
+    spawnWeight: 40,
+    effect: { type: 'damage', chance: 0.5, value: 50 },
   },
   {
     id: 'ICE',
@@ -206,8 +206,8 @@ export const SPECIAL_TETROMINOS: SpecialTetromino[] = [
     description: '消去時25%で敵を2秒凍結',
     color: '#00BFFF',
     rarity: 'uncommon',
-    spawnWeight: 15,
-    effect: { type: 'freeze', chance: 0.25, value: 2000 },
+    spawnWeight: 40,
+    effect: { type: 'freeze', chance: 0.5, value: 2000 },
   },
   {
     id: 'SAND',
@@ -215,7 +215,7 @@ export const SPECIAL_TETROMINOS: SpecialTetromino[] = [
     description: '配置時に下の隙間を埋める',
     color: '#DEB887',
     rarity: 'common',
-    spawnWeight: 20,
+    spawnWeight: 50,
     effect: { type: 'gravity', chance: 1, value: 0 },
   },
   {
@@ -224,8 +224,8 @@ export const SPECIAL_TETROMINOS: SpecialTetromino[] = [
     description: '消去時20%で周囲1マスも消去',
     color: '#2F2F2F',
     rarity: 'rare',
-    spawnWeight: 8,
-    effect: { type: 'explosion', chance: 0.2, value: 1 },
+    spawnWeight: 30,
+    effect: { type: 'explosion', chance: 0.5, value: 1 },
   },
   {
     id: 'LIGHTNING',
@@ -233,8 +233,8 @@ export const SPECIAL_TETROMINOS: SpecialTetromino[] = [
     description: '消去時15%で縦1列を消去',
     color: '#FFD700',
     rarity: 'epic',
-    spawnWeight: 5,
-    effect: { type: 'chain', chance: 0.15, value: 1 },
+    spawnWeight: 25,
+    effect: { type: 'chain', chance: 0.5, value: 1 },
   },
 ];
 

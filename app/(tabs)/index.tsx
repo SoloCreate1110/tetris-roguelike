@@ -3,7 +3,7 @@
  */
 
 import React, { useCallback, useMemo, useRef, useEffect } from 'react';
-import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, useWindowDimensions, Pressable, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -17,6 +17,8 @@ import { GameControls } from '@/components/game/GameControls';
 import { TitleScreen } from '@/components/game/TitleScreen';
 import { GameOverScreen } from '@/components/game/GameOverScreen';
 import { PowerUpSelection } from '@/components/game/PowerUpSelection';
+import { PauseScreen } from '@/components/game/PauseScreen';
+import { PowerUpDisplay } from '@/components/game/PowerUpDisplay';
 import { useGameState } from '@/hooks/use-game-state';
 import { useSound, SoundType } from '@/hooks/use-sound';
 import { GRID_WIDTH, GRID_HEIGHT } from '@/constants/game';
@@ -26,6 +28,7 @@ export default function GameScreen() {
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const { playSound } = useSound();
+  const [isPaused, setPaused] = React.useState(false);
   
   const {
     gameData,
@@ -114,7 +117,7 @@ export default function GameScreen() {
   const swipeGesture = Gesture.Pan()
     .minDistance(20)
     .onEnd((event) => {
-      if (gameData.gameState !== 'playing') return;
+      if (gameData.gameState !== 'playing' || isPaused) return;
       
       const { translationX, translationY, velocityY } = event;
       
@@ -149,7 +152,7 @@ export default function GameScreen() {
 
   const tapGesture = Gesture.Tap()
     .onEnd(() => {
-      if (gameData.gameState !== 'playing') return;
+      if (gameData.gameState !== 'playing' || isPaused) return;
       playSound('rotate');
       rotatePiece(1);
     });
@@ -186,6 +189,24 @@ export default function GameScreen() {
     playSound('hold');
     holdPiece();
   }, [holdPiece, playSound]);
+
+  const handlePause = useCallback(() => {
+    setPaused(true);
+  }, []);
+
+  const handleResume = useCallback(() => {
+    setPaused(false);
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    setPaused(false);
+    startGame();
+  }, [startGame]);
+
+  const handleGoToTitle = useCallback(() => {
+    setPaused(false);
+    goToTitle();
+  }, [goToTitle]);
 
   // パワーアップ選択時
   const handleSelectPowerUp = useCallback((powerUp: any) => {
@@ -233,6 +254,18 @@ export default function GameScreen() {
                 ghostY={ghostY}
                 cellSize={cellSize}
               />
+              {/* ポーズボタン */}
+              {gameData.gameState === 'playing' && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.pauseButton,
+                    pressed && styles.pauseButtonPressed,
+                  ]}
+                  onPress={handlePause}
+                >
+                  <Text style={styles.pauseButtonText}>⏸</Text>
+                </Pressable>
+              )}
             </View>
 
             {/* 右側: ネクストとステータス */}
@@ -247,6 +280,11 @@ export default function GameScreen() {
             </View>
           </View>
         </GestureDetector>
+
+        {/* 能力表示 */}
+        {gameData.powerUps.length > 0 && (
+          <PowerUpDisplay powerUps={gameData.powerUps} maxDisplay={5} />
+        )}
 
         {/* コントロール */}
         <View style={styles.controlsArea}>
@@ -278,6 +316,14 @@ export default function GameScreen() {
             onTitle={goToTitle}
           />
         )}
+
+        {/* ポーズ画面 */}
+        <PauseScreen
+          visible={isPaused}
+          onResume={handleResume}
+          onRetry={handleRetry}
+          onGoToTitle={handleGoToTitle}
+        />
       </ThemedView>
     </GestureHandlerRootView>
   );
@@ -309,6 +355,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
+    position: 'relative',
   },
   rightPanel: {
     flex: 1,
@@ -319,5 +366,24 @@ const styles = StyleSheet.create({
   },
   controlsArea: {
     paddingVertical: 8,
+  },
+  pauseButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  pauseButtonPressed: {
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  pauseButtonText: {
+    fontSize: 20,
+    color: '#FFFFFF',
   },
 });
