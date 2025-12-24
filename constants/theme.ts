@@ -1,41 +1,65 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * テトリスローグライク - カラーテーマ
  */
 
 import { Platform } from "react-native";
 
-const tintColorLight = "#0a7ea4";
-const tintColorDark = "#fff";
+// ゲームのメインカラー
+const primaryColor = "#FF6B35"; // オレンジ - アクセント
+const darkBackground = "#1A1A2E"; // ダークネイビー - 背景
+const surfaceColor = "#16213E"; // ダークブルー - カード背景
 
 export const Colors = {
   light: {
-    text: "#11181C",
-    background: "#fff",
-    tint: tintColorLight,
-    icon: "#687076",
-    tabIconDefault: "#687076",
-    tabIconSelected: tintColorLight,
+    text: "#FFFFFF",
+    background: darkBackground,
+    tint: primaryColor,
+    icon: "#A0A0A0",
+    tabIconDefault: "#A0A0A0",
+    tabIconSelected: primaryColor,
+    surface: surfaceColor,
+    primary: primaryColor,
   },
   dark: {
-    text: "#ECEDEE",
-    background: "#151718",
-    tint: tintColorDark,
-    icon: "#9BA1A6",
-    tabIconDefault: "#9BA1A6",
-    tabIconSelected: tintColorDark,
+    text: "#FFFFFF",
+    background: darkBackground,
+    tint: primaryColor,
+    icon: "#A0A0A0",
+    tabIconDefault: "#A0A0A0",
+    tabIconSelected: primaryColor,
+    surface: surfaceColor,
+    primary: primaryColor,
   },
+};
+
+// テトリミノの色
+export const TetrominoColors = {
+  I: "#00F0F0", // シアン
+  O: "#F0F000", // イエロー
+  T: "#A000F0", // パープル
+  S: "#00F000", // グリーン
+  Z: "#F00000", // レッド
+  J: "#0000F0", // ブルー
+  L: "#F0A000", // オレンジ
+  GARBAGE: "#808080", // おじゃまブロック
+  GHOST: "rgba(255, 255, 255, 0.3)", // ゴーストピース
+};
+
+// ゲームUI用の色
+export const GameColors = {
+  enemyHp: "#FF4444",
+  enemyHpBackground: "#440000",
+  combo: "#FFD700",
+  score: "#FFFFFF",
+  gridLine: "rgba(255, 255, 255, 0.1)",
+  gridBackground: "rgba(0, 0, 0, 0.5)",
 };
 
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
     sans: "system-ui",
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
     serif: "ui-serif",
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
     rounded: "ui-rounded",
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: "ui-monospace",
   },
   default: {

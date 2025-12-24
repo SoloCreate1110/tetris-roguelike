@@ -1,278 +1,227 @@
-import { Image } from "expo-image";
-import { useRouter, Link } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet } from "react-native";
+/**
+ * テトリスローグライク - メインゲーム画面
+ */
 
-import { HelloWave } from "@/components/hello-wave";
-import ParallaxScrollView from "@/components/parallax-scroll-view";
-import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
-import { getLoginUrl } from "@/constants/oauth";
-import { useAuth } from "@/hooks/use-auth";
+import React, { useCallback, useMemo } from 'react';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 
-export default function HomeScreen() {
-  const { user, loading, isAuthenticated, logout } = useAuth();
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const router = useRouter();
+import { ThemedView } from '@/components/themed-view';
+import { TetrisGrid } from '@/components/game/TetrisGrid';
+import { NextPieces } from '@/components/game/NextPieces';
+import { HoldPiece } from '@/components/game/HoldPiece';
+import { EnemyDisplay } from '@/components/game/EnemyDisplay';
+import { GameStats } from '@/components/game/GameStats';
+import { GameControls } from '@/components/game/GameControls';
+import { TitleScreen } from '@/components/game/TitleScreen';
+import { GameOverScreen } from '@/components/game/GameOverScreen';
+import { PowerUpSelection } from '@/components/game/PowerUpSelection';
+import { useGameState } from '@/hooks/use-game-state';
+import { GRID_WIDTH, GRID_HEIGHT } from '@/constants/game';
+import { Colors } from '@/constants/theme';
 
-  useEffect(() => {
-    console.log("[HomeScreen] Auth state:", {
-      hasUser: !!user,
-      loading,
-      isAuthenticated,
-      user: user ? { id: user.id, openId: user.openId, name: user.name, email: user.email } : null,
-    });
-  }, [user, loading, isAuthenticated]);
+export default function GameScreen() {
+  const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  
+  const {
+    gameData,
+    startGame,
+    movePiece,
+    rotatePiece,
+    hardDrop,
+    holdPiece,
+    getGhostY,
+    selectPowerUp,
+    goToTitle,
+  } = useGameState();
 
-  const handleLogin = async () => {
-    try {
-      console.log("[Auth] Login button clicked");
-      setIsLoggingIn(true);
-      const loginUrl = getLoginUrl();
-      console.log("[Auth] Generated login URL:", loginUrl);
+  // セルサイズを画面サイズに基づいて計算
+  const cellSize = useMemo(() => {
+    const availableHeight = screenHeight - insets.top - insets.bottom - 200; // コントロール用のスペース
+    const availableWidth = screenWidth * 0.6; // グリッドは画面幅の60%
+    
+    const maxCellByHeight = Math.floor(availableHeight / GRID_HEIGHT);
+    const maxCellByWidth = Math.floor(availableWidth / GRID_WIDTH);
+    
+    return Math.min(maxCellByHeight, maxCellByWidth, 20);
+  }, [screenWidth, screenHeight, insets]);
 
-      // On web, use direct redirect in same tab
-      // On mobile, use WebBrowser to open OAuth in a separate context
-      if (Platform.OS === "web") {
-        console.log("[Auth] Web platform: redirecting to OAuth in same tab...");
-        window.location.href = loginUrl;
+  // ゴースト位置を計算
+  const ghostY = useMemo(() => {
+    return getGhostY(gameData.grid, gameData.currentPiece);
+  }, [gameData.grid, gameData.currentPiece, getGhostY]);
+
+  // ジェスチャーハンドラー
+  const swipeGesture = Gesture.Pan()
+    .minDistance(20)
+    .onEnd((event) => {
+      if (gameData.gameState !== 'playing') return;
+      
+      const { translationX, translationY, velocityY } = event;
+      
+      // 下方向への高速スワイプ = ハードドロップ
+      if (velocityY > 1000 && Math.abs(translationY) > Math.abs(translationX)) {
+        hardDrop();
         return;
       }
-
-      // Mobile: Open OAuth URL in browser
-      // The OAuth server will redirect to our deep link (manusapp://oauth/callback?code=...&state=...)
-      console.log("[Auth] Opening OAuth URL in browser...");
-      const result = await WebBrowser.openAuthSessionAsync(
-        loginUrl,
-        undefined, // Deep link is already configured in getLoginUrl, so no need to specify here
-        {
-          preferEphemeralSession: false,
-          showInRecents: true,
-        },
-      );
-
-      console.log("[Auth] WebBrowser result:", result);
-      if (result.type === "cancel") {
-        console.log("[Auth] OAuth cancelled by user");
-      } else if (result.type === "dismiss") {
-        console.log("[Auth] OAuth dismissed");
-      } else if (result.type === "success" && result.url) {
-        console.log("[Auth] OAuth session successful, navigating to callback:", result.url);
-        // Extract code and state from the URL
-        try {
-          // Parse the URL - it might be exp:// or a regular URL
-          let url: URL;
-          if (result.url.startsWith("exp://") || result.url.startsWith("exps://")) {
-            // For exp:// URLs, we need to parse them differently
-            // Format: exp://192.168.31.156:8081/--/oauth/callback?code=...&state=...
-            const urlStr = result.url.replace(/^exp(s)?:\/\//, "http://");
-            url = new URL(urlStr);
-          } else {
-            url = new URL(result.url);
-          }
-
-          const code = url.searchParams.get("code");
-          const state = url.searchParams.get("state");
-          const error = url.searchParams.get("error");
-
-          console.log("[Auth] Extracted params from callback URL:", {
-            code: code?.substring(0, 20) + "...",
-            state: state?.substring(0, 20) + "...",
-            error,
-          });
-
-          if (error) {
-            console.error("[Auth] OAuth error in callback:", error);
-            return;
-          }
-
-          if (code && state) {
-            // Navigate to callback route with params
-            console.log("[Auth] Navigating to callback route with params...");
-            router.push({
-              pathname: "/oauth/callback" as any,
-              params: { code, state },
-            });
-          } else {
-            console.error("[Auth] Missing code or state in callback URL");
-          }
-        } catch (err) {
-          console.error("[Auth] Failed to parse callback URL:", err, result.url);
-          // Fallback: try parsing with regex
-          const codeMatch = result.url.match(/[?&]code=([^&]+)/);
-          const stateMatch = result.url.match(/[?&]state=([^&]+)/);
-
-          if (codeMatch && stateMatch) {
-            const code = decodeURIComponent(codeMatch[1]);
-            const state = decodeURIComponent(stateMatch[1]);
-            console.log("[Auth] Fallback: extracted params via regex, navigating...");
-            router.push({
-              pathname: "/oauth/callback" as any,
-              params: { code, state },
-            });
-          } else {
-            console.error("[Auth] Could not extract code/state from URL");
-          }
+      
+      // 横方向のスワイプ
+      if (Math.abs(translationX) > Math.abs(translationY)) {
+        if (translationX > 30) {
+          movePiece(1, 0);
+        } else if (translationX < -30) {
+          movePiece(-1, 0);
         }
       }
-    } catch (error) {
-      console.error("[Auth] Login error:", error);
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
+      // 下方向のスワイプ = ソフトドロップ
+      else if (translationY > 30) {
+        movePiece(0, 1);
+      }
+      // 上方向のスワイプ = ホールド
+      else if (translationY < -30) {
+        holdPiece();
+      }
+    });
+
+  const tapGesture = Gesture.Tap()
+    .onEnd(() => {
+      if (gameData.gameState !== 'playing') return;
+      rotatePiece(1);
+    });
+
+  const combinedGesture = Gesture.Race(swipeGesture, tapGesture);
+
+  // コントロールハンドラー
+  const handleMoveLeft = useCallback(() => movePiece(-1, 0), [movePiece]);
+  const handleMoveRight = useCallback(() => movePiece(1, 0), [movePiece]);
+  const handleRotate = useCallback(() => rotatePiece(1), [rotatePiece]);
+  const handleSoftDrop = useCallback(() => movePiece(0, 1), [movePiece]);
+  const handleHardDrop = useCallback(() => hardDrop(), [hardDrop]);
+  const handleHold = useCallback(() => holdPiece(), [holdPiece]);
+
+  // タイトル画面
+  if (gameData.gameState === 'title') {
+    return <TitleScreen onStart={startGame} />;
+  }
 
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: "#A1CEDC", dark: "#1D3D47" }}
-      headerImage={
-        <Image
-          source={require("@/assets/images/partial-react-logo.png")}
-          style={styles.reactLogo}
-        />
-      }
-    >
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.authContainer}>
-        {loading ? (
-          <ActivityIndicator />
-        ) : isAuthenticated && user ? (
-          <ThemedView style={styles.userInfo}>
-            <ThemedText type="subtitle">Logged in as</ThemedText>
-            <ThemedText type="defaultSemiBold">{user.name || user.email || user.openId}</ThemedText>
-            <Pressable onPress={logout} style={styles.logoutButton}>
-              <ThemedText style={styles.logoutText}>Logout</ThemedText>
-            </Pressable>
-          </ThemedView>
-        ) : (
-          <Pressable
-            onPress={handleLogin}
-            disabled={isLoggingIn}
-            style={[styles.loginButton, isLoggingIn && styles.loginButtonDisabled]}
-          >
-            {isLoggingIn ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <ThemedText style={styles.loginText}>Login</ThemedText>
-            )}
-          </Pressable>
+    <GestureHandlerRootView style={styles.gestureRoot}>
+      <ThemedView
+        style={[
+          styles.container,
+          {
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+          },
+        ]}
+      >
+        <GestureDetector gesture={combinedGesture}>
+          <View style={styles.gameArea}>
+            {/* 左側: 敵とホールド */}
+            <View style={styles.leftPanel}>
+              <EnemyDisplay enemy={gameData.enemy} />
+              <HoldPiece
+                piece={gameData.holdPiece}
+                canHold={gameData.canHold}
+                cellSize={8}
+              />
+            </View>
+
+            {/* 中央: テトリスグリッド */}
+            <View style={styles.centerPanel}>
+              <TetrisGrid
+                grid={gameData.grid}
+                currentPiece={gameData.currentPiece}
+                ghostY={ghostY}
+                cellSize={cellSize}
+              />
+            </View>
+
+            {/* 右側: ネクストとステータス */}
+            <View style={styles.rightPanel}>
+              <NextPieces pieces={gameData.nextPieces} cellSize={8} />
+              <GameStats
+                score={gameData.score}
+                stage={gameData.stage}
+                combo={gameData.combo}
+                linesCleared={gameData.linesCleared}
+              />
+            </View>
+          </View>
+        </GestureDetector>
+
+        {/* コントロール */}
+        <View style={styles.controlsArea}>
+          <GameControls
+            onMoveLeft={handleMoveLeft}
+            onMoveRight={handleMoveRight}
+            onRotate={handleRotate}
+            onSoftDrop={handleSoftDrop}
+            onHardDrop={handleHardDrop}
+            onHold={handleHold}
+          />
+        </View>
+
+        {/* パワーアップ選択画面 */}
+        {gameData.gameState === 'powerup' && (
+          <PowerUpSelection
+            onSelect={selectPowerUp}
+            currentPowerUps={gameData.powerUps}
+          />
+        )}
+
+        {/* ゲームオーバー画面 */}
+        {gameData.gameState === 'gameover' && (
+          <GameOverScreen
+            score={gameData.score}
+            stage={gameData.stage}
+            linesCleared={gameData.linesCleared}
+            onRetry={startGame}
+            onTitle={goToTitle}
+          />
         )}
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{" "}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: "cmd + d",
-              android: "cmd + m",
-              web: "F12",
-            })}
-          </ThemedText>{" "}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert("Action pressed")} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert("Share pressed")}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert("Delete pressed")}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
-
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{" "}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{" "}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{" "}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+  gestureRoot: {
+    flex: 1,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  container: {
+    flex: 1,
+    backgroundColor: Colors.dark.background,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: "absolute",
+  gameArea: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
   },
-  authContainer: {
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 8,
-    backgroundColor: "rgba(0, 0, 0, 0.05)",
+  leftPanel: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    maxWidth: 90,
   },
-  userInfo: {
-    gap: 8,
-    alignItems: "center",
+  centerPanel: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
   },
-  loginButton: {
-    backgroundColor: "#007AFF",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 44,
+  rightPanel: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    maxWidth: 90,
   },
-  loginButtonDisabled: {
-    opacity: 0.6,
-  },
-  loginText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  logoutButton: {
-    marginTop: 8,
+  controlsArea: {
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    backgroundColor: "rgba(255, 59, 48, 0.1)",
-  },
-  logoutText: {
-    color: "#FF3B30",
-    fontSize: 14,
-    fontWeight: "500",
   },
 });
