@@ -1,16 +1,14 @@
 /**
  * パワーアップ選択画面コンポーネント
+ * ミノ形状と属性を選択できる新バージョン
  */
 
-import React, { useMemo } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
-import Animated, {
-  FadeIn,
-  SlideInUp,
-} from 'react-native-reanimated';
+import React, { useMemo, useState } from 'react';
+import { View, StyleSheet, Pressable, ScrollView } from 'react-native';
+import Animated, { FadeIn, SlideInUp } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/themed-text';
-import { POWER_UPS, PowerUp, SPECIAL_TETROMINOS } from '@/constants/game';
+import { POWER_UPS, PowerUp, SPECIAL_TETROMINOS, ALL_MINO_SHAPES, AllMinoShapeType, TETROMINO_SHAPES, CUSTOM_TETROMINO_SHAPES } from '@/constants/game';
 import { Colors } from '@/constants/theme';
 
 interface PowerUpSelectionProps {
@@ -18,103 +16,122 @@ interface PowerUpSelectionProps {
   currentPowerUps: PowerUp[];
 }
 
-// パワーアップのアイコンマッピング
-const getIconForPowerUp = (powerUp: PowerUp): string => {
-  const iconMap: Record<string, string> = {
-    damage_boost: '⚔️',
-    slow_drop: '🐢',
-    combo_master: '🔥',
-    armor: '🛡️',
-    extra_preview: '👁️',
-    unlock_fire: '🔥',
-    unlock_ice: '❄️',
-    unlock_sand: '⏳',
-    unlock_bomb: '💣',
-    unlock_lightning: '⚡',
-  };
-  return iconMap[powerUp.id] || '✨';
-};
-
-// レアリティに応じた色を取得
-const getRarityColor = (powerUp: PowerUp): string => {
-  if (powerUp.type === 'tetromino') {
-    const minoType = powerUp.effect.unlockTetromino as string;
-    const specialMino = SPECIAL_TETROMINOS.find(s => s.id === minoType);
-    if (specialMino) {
-      switch (specialMino.rarity) {
-        case 'common': return '#A0A0A0';
-        case 'uncommon': return '#4CAF50';
-        case 'rare': return '#2196F3';
-        case 'epic': return '#9C27B0';
-      }
+// ミノ形状のプレビューを描画
+const MinoPreview: React.FC<{ shape: AllMinoShapeType; size?: number }> = ({ shape, size = 40 }) => {
+  const getShape = () => {
+    if (['I', 'O', 'T', 'S', 'Z', 'J', 'L'].includes(shape as string)) {
+      return TETROMINO_SHAPES[shape as keyof typeof TETROMINO_SHAPES][0];
+    } else {
+      return CUSTOM_TETROMINO_SHAPES[shape as keyof typeof CUSTOM_TETROMINO_SHAPES][0];
     }
-  }
-  return '#FFD700';
-};
-
-// レアリティラベルを取得
-const getRarityLabel = (powerUp: PowerUp): string | null => {
-  if (powerUp.type === 'tetromino') {
-    const minoType = powerUp.effect.unlockTetromino as string;
-    const specialMino = SPECIAL_TETROMINOS.find(s => s.id === minoType);
-    if (specialMino) {
-      switch (specialMino.rarity) {
-        case 'common': return 'コモン';
-        case 'uncommon': return 'アンコモン';
-        case 'rare': return 'レア';
-        case 'epic': return 'エピック';
-      }
-    }
-  }
-  return null;
-};
-
-const PowerUpCard: React.FC<{
-  powerUp: PowerUp;
-  onSelect: () => void;
-  index: number;
-}> = ({ powerUp, onSelect, index }) => {
-  const handlePress = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onSelect();
   };
 
-  const rarityColor = getRarityColor(powerUp);
-  const rarityLabel = getRarityLabel(powerUp);
-  const isTetrominoPowerUp = powerUp.type === 'tetromino';
+  const shapeData = getShape();
+  const cellSize = size / Math.max(shapeData.length, shapeData[0]?.length || 1);
 
   return (
-    <Animated.View
-      entering={SlideInUp.delay(index * 100).springify()}
-    >
+    <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
+      {shapeData.map((row: number[], rowIdx: number) => (
+        <View key={rowIdx} style={{ flexDirection: 'row' }}>
+          {row.map((cell: number, colIdx: number) => (
+            <View
+              key={`${rowIdx}-${colIdx}`}
+              style={{
+                width: cellSize,
+                height: cellSize,
+                backgroundColor: cell ? '#00BFFF' : 'transparent',
+                borderWidth: cell ? 1 : 0,
+                borderColor: '#00BFFF',
+              }}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+};
+
+// ステップ1: ミノ形状選択
+const ShapeSelectionStep: React.FC<{
+  onSelect: (shape: AllMinoShapeType) => void;
+}> = ({ onSelect }) => {
+  return (
+    <Animated.View entering={FadeIn} style={styles.stepContainer}>
+      <ThemedText type="title" style={styles.stepTitle}>
+        ミノの形を選ぼう！
+      </ThemedText>
+      <ScrollView style={styles.shapeGrid} showsVerticalScrollIndicator={false}>
+        <View style={styles.shapeGridContent}>
+          {ALL_MINO_SHAPES.map((shape) => (
+            <Pressable
+              key={shape}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                onSelect(shape);
+              }}
+              style={({ pressed }) => [
+                styles.shapeCard,
+                pressed && styles.shapeCardPressed,
+              ]}
+            >
+              <MinoPreview shape={shape} size={50} />
+              <ThemedText style={styles.shapeLabel}>{shape}</ThemedText>
+            </Pressable>
+          ))}
+        </View>
+      </ScrollView>
+    </Animated.View>
+  );
+};
+
+// ステップ2: 属性選択
+const AttributeSelectionStep: React.FC<{
+  selectedShape: AllMinoShapeType;
+  onSelect: (attribute: string) => void;
+  onBack: () => void;
+}> = ({ selectedShape, onSelect, onBack }) => {
+  return (
+    <Animated.View entering={SlideInUp} style={styles.stepContainer}>
+      <ThemedText type="title" style={styles.stepTitle}>
+        属性を選ぼう！
+      </ThemedText>
+      
+      <View style={styles.selectedShapePreview}>
+        <MinoPreview shape={selectedShape} size={60} />
+        <ThemedText style={styles.previewLabel}>{selectedShape}</ThemedText>
+      </View>
+
+      <ScrollView style={styles.attributeList} showsVerticalScrollIndicator={false}>
+        {SPECIAL_TETROMINOS.map((mino) => (
+          <Pressable
+            key={mino.id}
+            onPress={() => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              onSelect(mino.id);
+            }}
+            style={({ pressed }) => [
+              styles.attributeCard,
+              { backgroundColor: mino.color },
+              pressed && styles.attributeCardPressed,
+            ]}
+          >
+            <ThemedText style={styles.attributeName}>{mino.name}</ThemedText>
+            <ThemedText style={styles.attributeDesc}>{mino.description}</ThemedText>
+          </Pressable>
+        ))}
+      </ScrollView>
+
       <Pressable
-        onPress={handlePress}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onBack();
+        }}
         style={({ pressed }) => [
-          styles.card,
-          isTetrominoPowerUp && { borderColor: rarityColor },
-          pressed && styles.cardPressed,
+          styles.backButton,
+          pressed && styles.backButtonPressed,
         ]}
       >
-        {rarityLabel && (
-          <View style={[styles.rarityBadge, { backgroundColor: rarityColor }]}>
-            <ThemedText style={styles.rarityText}>{rarityLabel}</ThemedText>
-          </View>
-        )}
-        <ThemedText style={styles.cardIcon}>
-          {getIconForPowerUp(powerUp)}
-        </ThemedText>
-        <ThemedText style={[
-          styles.cardTitle,
-          isTetrominoPowerUp && { color: rarityColor }
-        ]}>
-          {powerUp.name}
-        </ThemedText>
-        <ThemedText style={styles.cardDescription}>{powerUp.description}</ThemedText>
-        {isTetrominoPowerUp && (
-          <View style={styles.tetrominoTag}>
-            <ThemedText style={styles.tetrominoTagText}>新ミノ解放</ThemedText>
-          </View>
-        )}
+        <ThemedText style={styles.backButtonText}>戻る</ThemedText>
       </Pressable>
     </Animated.View>
   );
@@ -124,152 +141,163 @@ export const PowerUpSelection: React.FC<PowerUpSelectionProps> = ({
   onSelect,
   currentPowerUps,
 }) => {
-  // ランダムに3つのパワーアップを選択（重複なし）
-  const availablePowerUps = useMemo(() => {
-    const currentIds = currentPowerUps.map((p) => p.id);
-    const available = POWER_UPS.filter((p) => !currentIds.includes(p.id));
-    
-    // パッシブと特殊ミノ解放を分ける
-    const passives = available.filter(p => p.type === 'passive');
-    const tetrominos = available.filter(p => p.type === 'tetromino');
-    
-    // 選択肢を構築（パッシブ1-2個、特殊ミノ1-2個）
-    const shuffledPassives = [...passives].sort(() => Math.random() - 0.5);
-    const shuffledTetrominos = [...tetrominos].sort(() => Math.random() - 0.5);
-    
-    const selected: PowerUp[] = [];
-    
-    // パッシブを1-2個追加
-    const passiveCount = Math.min(shuffledPassives.length, Math.random() > 0.5 ? 2 : 1);
-    selected.push(...shuffledPassives.slice(0, passiveCount));
-    
-    // 残りを特殊ミノで埋める
-    const remainingSlots = 3 - selected.length;
-    selected.push(...shuffledTetrominos.slice(0, remainingSlots));
-    
-    // 足りない場合はパッシブで補う
-    if (selected.length < 3) {
-      const morePassives = shuffledPassives.slice(passiveCount, passiveCount + (3 - selected.length));
-      selected.push(...morePassives);
-    }
-    
-    // シャッフルして返す
-    return selected.sort(() => Math.random() - 0.5);
-  }, [currentPowerUps]);
+  const [step, setStep] = useState<'shape' | 'attribute'>('shape');
+  const [selectedShape, setSelectedShape] = useState<AllMinoShapeType | null>(null);
+
+  const handleShapeSelect = (shape: AllMinoShapeType) => {
+    setSelectedShape(shape);
+    setStep('attribute');
+  };
+
+  const handleAttributeSelect = (attributeId: string) => {
+    // 新しいパワーアップを作成
+    const newPowerUp: PowerUp = {
+      id: `${attributeId}_${selectedShape || 'unknown'}` as any,
+      name: `${attributeId} ${selectedShape}`,
+      type: 'tetromino',
+      description: `${selectedShape}形の${attributeId}属性ミノ`,
+      effect: {
+        unlockTetromino: attributeId,
+        shape: selectedShape,
+      },
+    };
+    onSelect(newPowerUp);
+  };
+
+  const handleBack = () => {
+    setSelectedShape(null);
+    setStep('shape');
+  };
 
   return (
-    <Animated.View
-      entering={FadeIn.duration(300)}
-      style={styles.container}
-    >
-      <View style={styles.overlay} />
-      <View style={styles.content}>
-        <ThemedText style={styles.title}>STAGE CLEAR!</ThemedText>
-        <ThemedText style={styles.subtitle}>パワーアップを選択</ThemedText>
-        
-        <View style={styles.cardsContainer}>
-          {availablePowerUps.map((powerUp, index) => (
-            <PowerUpCard
-              key={powerUp.id}
-              powerUp={powerUp}
-              onSelect={() => onSelect(powerUp)}
-              index={index}
-            />
-          ))}
-        </View>
-      </View>
-    </Animated.View>
+    <View style={styles.overlay}>
+      <Animated.View
+        entering={FadeIn}
+        style={styles.container}
+      >
+        {step === 'shape' && (
+          <ShapeSelectionStep onSelect={handleShapeSelect} />
+        )}
+        {step === 'attribute' && selectedShape && (
+          <AttributeSelectionStep
+            selectedShape={selectedShape}
+            onSelect={handleAttributeSelect}
+            onBack={handleBack}
+          />
+        )}
+      </Animated.View>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 100,
-  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
-  },
-  content: {
+    justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-    width: '100%',
+    zIndex: 1000,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFD700',
-    marginBottom: 8,
-    textShadowColor: 'rgba(255, 215, 0, 0.5)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 10,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: '#FFFFFF',
-    marginBottom: 24,
-  },
-  cardsContainer: {
-    width: '100%',
-    gap: 12,
-    paddingHorizontal: 20,
-  },
-  card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  container: {
+    width: '90%',
+    maxHeight: '85%',
+    backgroundColor: Colors.dark.background,
     borderRadius: 16,
-    padding: 16,
+    padding: 20,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    position: 'relative',
-    overflow: 'hidden',
   },
-  cardPressed: {
-    backgroundColor: Colors.dark.primary,
-    borderColor: Colors.dark.primary,
+  stepContainer: {
+    flex: 1,
+  },
+  stepTitle: {
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#FFFFFF',
+  },
+  shapeGrid: {
+    flex: 1,
+    marginBottom: 16,
+  },
+  shapeGridContent: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  shapeCard: {
+    width: '30%',
+    aspectRatio: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    padding: 8,
+  },
+  shapeCardPressed: {
+    backgroundColor: 'rgba(0, 191, 255, 0.3)',
+    borderColor: '#00BFFF',
+    transform: [{ scale: 0.95 }],
+  },
+  shapeLabel: {
+    fontSize: 10,
+    marginTop: 4,
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  selectedShapePreview: {
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingVertical: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+  },
+  previewLabel: {
+    marginTop: 8,
+    color: '#FFFFFF',
+    fontSize: 12,
+  },
+  attributeList: {
+    flex: 1,
+    marginBottom: 16,
+  },
+  attributeCard: {
+    marginBottom: 12,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  attributeCardPressed: {
+    opacity: 0.8,
     transform: [{ scale: 0.98 }],
   },
-  cardIcon: {
-    fontSize: 40,
-    marginBottom: 8,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  attributeName: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#FFFFFF',
     marginBottom: 4,
   },
-  cardDescription: {
-    fontSize: 14,
-    color: '#A0A0A0',
-    textAlign: 'center',
-  },
-  rarityBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  rarityText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  tetrominoTag: {
-    marginTop: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-  },
-  tetrominoTagText: {
+  attributeDesc: {
     fontSize: 12,
-    color: '#FFD700',
-    fontWeight: 'bold',
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  backButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(255, 59, 48, 0.3)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FF3B30',
+    alignItems: 'center',
+  },
+  backButtonPressed: {
+    backgroundColor: 'rgba(255, 59, 48, 0.5)',
+  },
+  backButtonText: {
+    color: '#FF3B30',
+    fontWeight: '600',
   },
 });

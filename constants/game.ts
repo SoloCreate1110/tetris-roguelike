@@ -94,6 +94,53 @@ export const SPECIAL_TETROMINO_SHAPES: number[][][] = [
   [[0, 1, 0], [1, 1, 0], [0, 1, 0]],
 ];
 
+// カスタムミノ形状（基本テトリミノ以外）
+export type CustomTetrominoType = 'CROSS' | 'RECT_2x3' | 'RECT_3x2' | 'L_LARGE' | 'PLUS';
+
+export const CUSTOM_TETROMINO_SHAPES: Record<CustomTetrominoType, number[][][]> = {
+  // 十字形（+）
+  CROSS: [
+    [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+    [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+    [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+    [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+  ],
+  // 2×3矩形
+  RECT_2x3: [
+    [[1, 1, 1], [1, 1, 1]],
+    [[1, 1], [1, 1], [1, 1]],
+    [[1, 1, 1], [1, 1, 1]],
+    [[1, 1], [1, 1], [1, 1]],
+  ],
+  // 3×2矩形
+  RECT_3x2: [
+    [[1, 1], [1, 1], [1, 1]],
+    [[1, 1, 1], [1, 1, 1]],
+    [[1, 1], [1, 1], [1, 1]],
+    [[1, 1, 1], [1, 1, 1]],
+  ],
+  // 大きなL字
+  L_LARGE: [
+    [[1, 0, 0, 0], [1, 1, 1, 1]],
+    [[1, 1], [1, 0], [1, 0], [1, 0]],
+    [[1, 1, 1, 1], [0, 0, 0, 1]],
+    [[0, 1], [0, 1], [0, 1], [1, 1]],
+  ],
+  // プラス記号（大）
+  PLUS: [
+    [[0, 0, 1, 0, 0], [0, 0, 1, 0, 0], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0], [0, 0, 1, 0, 0]],
+    [[0, 0, 1, 0, 0], [0, 0, 1, 0, 0], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0], [0, 0, 1, 0, 0]],
+    [[0, 0, 1, 0, 0], [0, 0, 1, 0, 0], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0], [0, 0, 1, 0, 0]],
+    [[0, 0, 1, 0, 0], [0, 0, 1, 0, 0], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0], [0, 0, 1, 0, 0]],
+  ],
+};
+
+// すべてのミノ形状タイプ
+export type AllMinoShapeType = TetrominoType | CustomTetrominoType;
+
+// ミノ形状の配列（パワーアップ選択用）
+export const ALL_MINO_SHAPES: AllMinoShapeType[] = ['I', 'O', 'T', 'S', 'Z', 'J', 'L', 'CROSS', 'RECT_2x3', 'RECT_3x2', 'L_LARGE', 'PLUS'];
+
 // SRS（Super Rotation System）のウォールキックデータ
 export const WALL_KICK_DATA = {
   JLSTZ: [
@@ -240,11 +287,11 @@ export const SPECIAL_TETROMINOS: SpecialTetromino[] = [
 
 // パワーアップの定義
 export interface PowerUp {
-  id: string;
+  id: string | number;
   name: string;
   description: string;
   type: 'passive' | 'tetromino' | 'active';
-  effect: Record<string, number | string>;
+  effect: Record<string, number | string | any>;
 }
 
 export const POWER_UPS: PowerUp[] = [

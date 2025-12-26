@@ -47,13 +47,13 @@ const ControlButton: React.FC<ControlButtonProps> = ({
   const handlePressIn = useCallback(() => {
     isLongPressRef.current = false;
     
-    // 長押し検出タイマー（200ms後に長押しと判定）
+    // 長押し検出タイマー（100ms後に長押しと判定）
     if (onLongPressStart) {
       longPressTimerRef.current = setTimeout(() => {
         isLongPressRef.current = true;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         onLongPressStart();
-      }, 200);
+      }, 100);
     }
   }, [onLongPressStart]);
 
@@ -146,19 +146,19 @@ export const GameControls: React.FC<GameControlsProps> = ({
   const moveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const startMovingLeft = useCallback(() => {
-    // 長押し開始時に連続移動
+    // 長押し開始時に連続移動（より速く）
     moveIntervalRef.current = setInterval(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       onMoveLeft();
-    }, 80);
+    }, 50);
   }, [onMoveLeft]);
 
   const startMovingRight = useCallback(() => {
-    // 長押し開始時に連続移動
+    // 長押し開始時に連続移動（より速く）
     moveIntervalRef.current = setInterval(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       onMoveRight();
-    }, 80);
+    }, 50);
   }, [onMoveRight]);
 
   const stopMoving = useCallback(() => {
