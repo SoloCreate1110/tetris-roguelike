@@ -1,14 +1,22 @@
 /**
  * パワーアップ選択画面コンポーネント
- * ミノ形状と属性を選択できる新バージョン
+ * 属性と形をランダムに表示し、ユーザーが選択できる
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { View, StyleSheet, Pressable, ScrollView } from 'react-native';
 import Animated, { FadeIn, SlideInUp } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/themed-text';
-import { POWER_UPS, PowerUp, SPECIAL_TETROMINOS, ALL_MINO_SHAPES, AllMinoShapeType, TETROMINO_SHAPES, CUSTOM_TETROMINO_SHAPES } from '@/constants/game';
+import { 
+  POWER_UPS, 
+  PowerUp, 
+  SPECIAL_TETROMINOS, 
+  ALL_MINO_SHAPES, 
+  AllMinoShapeType,
+  TETROMINO_SHAPES, 
+  CUSTOM_TETROMINO_SHAPES 
+} from '@/constants/game';
 import { Colors } from '@/constants/theme';
 
 interface PowerUpSelectionProps {
@@ -17,7 +25,11 @@ interface PowerUpSelectionProps {
 }
 
 // ミノ形状のプレビューを描画
-const MinoPreview: React.FC<{ shape: AllMinoShapeType; size?: number }> = ({ shape, size = 40 }) => {
+const MinoPreview: React.FC<{ shape: AllMinoShapeType; size?: number; color?: string }> = ({ 
+  shape, 
+  size = 40,
+  color = '#00BFFF'
+}) => {
   const getShape = () => {
     if (['I', 'O', 'T', 'S', 'Z', 'J', 'L'].includes(shape as string)) {
       return TETROMINO_SHAPES[shape as keyof typeof TETROMINO_SHAPES][0];
@@ -39,9 +51,9 @@ const MinoPreview: React.FC<{ shape: AllMinoShapeType; size?: number }> = ({ sha
               style={{
                 width: cellSize,
                 height: cellSize,
-                backgroundColor: cell ? '#00BFFF' : 'transparent',
+                backgroundColor: cell ? color : 'transparent',
                 borderWidth: cell ? 1 : 0,
-                borderColor: '#00BFFF',
+                borderColor: color,
               }}
             />
           ))}
@@ -51,87 +63,79 @@ const MinoPreview: React.FC<{ shape: AllMinoShapeType; size?: number }> = ({ sha
   );
 };
 
-// ステップ1: ミノ形状選択
-const ShapeSelectionStep: React.FC<{
-  onSelect: (shape: AllMinoShapeType) => void;
-}> = ({ onSelect }) => {
+// パワーアップカード（属性と形の組み合わせ）
+const PowerUpCard: React.FC<{
+  attribute: typeof SPECIAL_TETROMINOS[0];
+  shape: AllMinoShapeType;
+  onSelect: () => void;
+  index: number;
+}> = ({ attribute, shape, onSelect, index }) => {
+  const handlePress = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    onSelect();
+  };
+
   return (
-    <Animated.View entering={FadeIn} style={styles.stepContainer}>
-      <ThemedText type="title" style={styles.stepTitle}>
-        ミノの形を選ぼう！
-      </ThemedText>
-      <ScrollView style={styles.shapeGrid} showsVerticalScrollIndicator={false}>
-        <View style={styles.shapeGridContent}>
-          {ALL_MINO_SHAPES.map((shape) => (
-            <Pressable
-              key={shape}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                onSelect(shape);
-              }}
-              style={({ pressed }) => [
-                styles.shapeCard,
-                pressed && styles.shapeCardPressed,
-              ]}
-            >
-              <MinoPreview shape={shape} size={50} />
-              <ThemedText style={styles.shapeLabel}>{shape}</ThemedText>
-            </Pressable>
-          ))}
+    <Animated.View
+      entering={SlideInUp.delay(index * 100)}
+      style={styles.cardContainer}
+    >
+      <Pressable
+        onPress={handlePress}
+        style={({ pressed }) => [
+          styles.card,
+          { backgroundColor: attribute.color },
+          pressed && styles.cardPressed,
+        ]}
+      >
+        <View style={styles.cardContent}>
+          <MinoPreview shape={shape} size={50} color="#FFFFFF" />
+          <View style={styles.cardText}>
+            <ThemedText style={styles.cardName}>
+              {attribute.name}
+            </ThemedText>
+            <ThemedText style={styles.cardShape}>
+              形: {shape}
+            </ThemedText>
+            <ThemedText style={styles.cardDesc}>
+              {attribute.description}
+            </ThemedText>
+          </View>
         </View>
-      </ScrollView>
+      </Pressable>
     </Animated.View>
   );
 };
 
-// ステップ2: 属性選択
-const AttributeSelectionStep: React.FC<{
-  selectedShape: AllMinoShapeType;
-  onSelect: (attribute: string) => void;
-  onBack: () => void;
-}> = ({ selectedShape, onSelect, onBack }) => {
+// 通常パワーアップカード
+const RegularPowerUpCard: React.FC<{
+  powerUp: PowerUp;
+  onSelect: () => void;
+  index: number;
+}> = ({ powerUp, onSelect, index }) => {
+  const handlePress = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    onSelect();
+  };
+
   return (
-    <Animated.View entering={SlideInUp} style={styles.stepContainer}>
-      <ThemedText type="title" style={styles.stepTitle}>
-        属性を選ぼう！
-      </ThemedText>
-      
-      <View style={styles.selectedShapePreview}>
-        <MinoPreview shape={selectedShape} size={60} />
-        <ThemedText style={styles.previewLabel}>{selectedShape}</ThemedText>
-      </View>
-
-      <ScrollView style={styles.attributeList} showsVerticalScrollIndicator={false}>
-        {SPECIAL_TETROMINOS.map((mino) => (
-          <Pressable
-            key={mino.id}
-            onPress={() => {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              onSelect(mino.id);
-            }}
-            style={({ pressed }) => [
-              styles.attributeCard,
-              { backgroundColor: mino.color },
-              pressed && styles.attributeCardPressed,
-            ]}
-          >
-            <ThemedText style={styles.attributeName}>{mino.name}</ThemedText>
-            <ThemedText style={styles.attributeDesc}>{mino.description}</ThemedText>
-          </Pressable>
-        ))}
-      </ScrollView>
-
+    <Animated.View
+      entering={SlideInUp.delay(index * 100)}
+      style={styles.cardContainer}
+    >
       <Pressable
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          onBack();
-        }}
+        onPress={handlePress}
         style={({ pressed }) => [
-          styles.backButton,
-          pressed && styles.backButtonPressed,
+          styles.regularCard,
+          pressed && styles.cardPressed,
         ]}
       >
-        <ThemedText style={styles.backButtonText}>戻る</ThemedText>
+        <ThemedText style={styles.regularCardName}>
+          {powerUp.name}
+        </ThemedText>
+        <ThemedText style={styles.regularCardDesc}>
+          {powerUp.description}
+        </ThemedText>
       </Pressable>
     </Animated.View>
   );
@@ -141,50 +145,79 @@ export const PowerUpSelection: React.FC<PowerUpSelectionProps> = ({
   onSelect,
   currentPowerUps,
 }) => {
-  const [step, setStep] = useState<'shape' | 'attribute'>('shape');
-  const [selectedShape, setSelectedShape] = useState<AllMinoShapeType | null>(null);
+  // ランダムなパワーアップオプションを生成
+  const powerUpOptions = useMemo(() => {
+    const options: (PowerUp | { type: 'special'; attribute: typeof SPECIAL_TETROMINOS[0]; shape: AllMinoShapeType })[] = [];
 
-  const handleShapeSelect = (shape: AllMinoShapeType) => {
-    setSelectedShape(shape);
-    setStep('attribute');
-  };
+    // 通常パワーアップ2つ
+    const shuffledPowerUps = [...POWER_UPS].sort(() => Math.random() - 0.5);
+    for (let i = 0; i < 2 && i < shuffledPowerUps.length; i++) {
+      options.push(shuffledPowerUps[i]);
+    }
 
-  const handleAttributeSelect = (attributeId: string) => {
-    // 新しいパワーアップを作成
+    // 特殊ミノ3つ（属性と形をランダム組み合わせ）
+    for (let i = 0; i < 3; i++) {
+      const randomAttribute = SPECIAL_TETROMINOS[Math.floor(Math.random() * SPECIAL_TETROMINOS.length)];
+      const randomShape = ALL_MINO_SHAPES[Math.floor(Math.random() * ALL_MINO_SHAPES.length)];
+      options.push({
+        type: 'special',
+        attribute: randomAttribute,
+        shape: randomShape,
+      });
+    }
+
+    return options;
+  }, []);
+
+  const handleSelectSpecial = (attribute: typeof SPECIAL_TETROMINOS[0], shape: AllMinoShapeType) => {
     const newPowerUp: PowerUp = {
-      id: `${attributeId}_${selectedShape || 'unknown'}` as any,
-      name: `${attributeId} ${selectedShape}`,
+      id: `${attribute.id}_${shape}_${Date.now()}` as any,
+      name: `${attribute.name} (${shape})`,
+      description: `${shape}形の${attribute.name}`,
       type: 'tetromino',
-      description: `${selectedShape}形の${attributeId}属性ミノ`,
       effect: {
-        unlockTetromino: attributeId,
-        shape: selectedShape,
+        unlockTetromino: attribute.id,
+        shape: shape,
       },
     };
     onSelect(newPowerUp);
   };
 
-  const handleBack = () => {
-    setSelectedShape(null);
-    setStep('shape');
+  const handleSelectRegular = (powerUp: PowerUp) => {
+    onSelect(powerUp);
   };
 
   return (
     <View style={styles.overlay}>
-      <Animated.View
-        entering={FadeIn}
-        style={styles.container}
-      >
-        {step === 'shape' && (
-          <ShapeSelectionStep onSelect={handleShapeSelect} />
-        )}
-        {step === 'attribute' && selectedShape && (
-          <AttributeSelectionStep
-            selectedShape={selectedShape}
-            onSelect={handleAttributeSelect}
-            onBack={handleBack}
-          />
-        )}
+      <Animated.View entering={FadeIn} style={styles.container}>
+        <ThemedText type="title" style={styles.title}>
+          パワーアップを選ぼう！
+        </ThemedText>
+
+        <ScrollView style={styles.optionsList} showsVerticalScrollIndicator={false}>
+          {powerUpOptions.map((option, index) => {
+            if ('type' in option && option.type === 'special') {
+              return (
+                <PowerUpCard
+                  key={`special-${index}`}
+                  attribute={option.attribute}
+                  shape={option.shape}
+                  onSelect={() => handleSelectSpecial(option.attribute, option.shape)}
+                  index={index}
+                />
+              );
+            } else {
+              return (
+                <RegularPowerUpCard
+                  key={`regular-${index}`}
+                  powerUp={option as PowerUp}
+                  onSelect={() => handleSelectRegular(option as PowerUp)}
+                  index={index}
+                />
+              );
+            }
+          })}
+        </ScrollView>
       </Animated.View>
     </View>
   );
@@ -193,7 +226,7 @@ export const PowerUpSelection: React.FC<PowerUpSelectionProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
@@ -207,97 +240,66 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
-  stepContainer: {
-    flex: 1,
-  },
-  stepTitle: {
+  title: {
     textAlign: 'center',
     marginBottom: 20,
     color: '#FFFFFF',
   },
-  shapeGrid: {
+  optionsList: {
     flex: 1,
-    marginBottom: 16,
   },
-  shapeGridContent: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  shapeCard: {
-    width: '30%',
-    aspectRatio: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    padding: 8,
-  },
-  shapeCardPressed: {
-    backgroundColor: 'rgba(0, 191, 255, 0.3)',
-    borderColor: '#00BFFF',
-    transform: [{ scale: 0.95 }],
-  },
-  shapeLabel: {
-    fontSize: 10,
-    marginTop: 4,
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
-  selectedShapePreview: {
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingVertical: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 12,
-  },
-  previewLabel: {
-    marginTop: 8,
-    color: '#FFFFFF',
-    fontSize: 12,
-  },
-  attributeList: {
-    flex: 1,
-    marginBottom: 16,
-  },
-  attributeCard: {
+  cardContainer: {
     marginBottom: 12,
-    padding: 16,
+  },
+  card: {
     borderRadius: 12,
+    padding: 16,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.3)',
   },
-  attributeCardPressed: {
+  cardPressed: {
     opacity: 0.8,
     transform: [{ scale: 0.98 }],
   },
-  attributeName: {
-    fontSize: 16,
+  cardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cardText: {
+    flex: 1,
+  },
+  cardName: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
     marginBottom: 4,
   },
-  attributeDesc: {
+  cardShape: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginBottom: 4,
+    fontWeight: '500',
   },
-  backButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    backgroundColor: 'rgba(255, 59, 48, 0.3)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FF3B30',
-    alignItems: 'center',
+  cardDesc: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.7)',
   },
-  backButtonPressed: {
-    backgroundColor: 'rgba(255, 59, 48, 0.5)',
+  regularCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
-  backButtonText: {
-    color: '#FF3B30',
+  regularCardName: {
+    fontSize: 14,
     fontWeight: '600',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  regularCardDesc: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
   },
 });

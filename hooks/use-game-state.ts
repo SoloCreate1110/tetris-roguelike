@@ -43,6 +43,7 @@ export type CurrentPiece = {
   rotation: number;
   isSpecial: boolean;
   specialData?: SpecialTetromino;
+  shape?: string; // 特殊ミノの形状（CROSS, RECT_2x3など）
 };
 
 // 敵の状態
@@ -114,11 +115,18 @@ const createEmptyGrid = (): CellState[][] => {
 };
 
 // テトリミノの形状を取得
-const getShape = (type: AllTetrominoType, rotation: number): number[][] => {
+const getShape = (type: AllTetrominoType, rotation: number, customShape?: string): number[][] => {
   if (NORMAL_TETROMINOS.includes(type as TetrominoType)) {
     return TETROMINO_SHAPES[type as TetrominoType][rotation];
   }
-  // 特殊ミノはTミノの形状を使用
+  // 特殊ミノの場合、カスタム形状を使用
+  if (customShape) {
+    const { CUSTOM_TETROMINO_SHAPES } = require('@/constants/game');
+    if (CUSTOM_TETROMINO_SHAPES[customShape as any]) {
+      return CUSTOM_TETROMINO_SHAPES[customShape as any][rotation];
+    }
+  }
+  // デフォルトはTミノの形状を使用
   return SPECIAL_TETROMINO_SHAPES[rotation];
 };
 
@@ -139,7 +147,7 @@ const checkCollision = (
   offsetY: number = 0,
   newRotation?: number
 ): boolean => {
-  const shape = getShape(piece.type, newRotation ?? piece.rotation);
+  const shape = getShape(piece.type, newRotation ?? piece.rotation, piece.shape);
   const newX = piece.x + offsetX;
   const newY = piece.y + offsetY;
 
@@ -284,7 +292,7 @@ export const useGameState = () => {
     if (piece.type !== 'SAND') return grid;
 
     const newGrid = grid.map(row => row.map(cell => ({ ...cell })));
-    const shape = getShape(piece.type, piece.rotation);
+    const shape = getShape(piece.type, piece.rotation, piece.shape);
     const color = getColor(piece.type);
 
     // 砂ミノの各ブロックを下に落とす
@@ -315,7 +323,7 @@ export const useGameState = () => {
       if (!prev.currentPiece || prev.gameState !== 'playing') return prev;
 
       let newGrid = prev.grid.map((row) => row.map((cell) => ({ ...cell })));
-      const shape = getShape(prev.currentPiece.type, prev.currentPiece.rotation);
+      const shape = getShape(prev.currentPiece.type, prev.currentPiece.rotation, prev.currentPiece.shape);
       const color = getColor(prev.currentPiece.type);
 
       // 砂ミノの場合は重力効果を適用
@@ -704,11 +712,15 @@ export const useGameState = () => {
     setGameData((prev) => {
       // 特殊ミノ解放の処理
       let newUnlockedSpecialMinos = [...prev.unlockedSpecialMinos];
+      let selectedShape: string | undefined = undefined;
+      
       if (powerUp.type === 'tetromino' && powerUp.effect.unlockTetromino) {
         const minoType = powerUp.effect.unlockTetromino as SpecialTetrominoType;
         if (!newUnlockedSpecialMinos.includes(minoType)) {
           newUnlockedSpecialMinos.push(minoType);
         }
+        // 形状情報を保存
+        selectedShape = powerUp.effect.shape as string;
       }
 
       // 次の敵を生成
@@ -736,6 +748,11 @@ export const useGameState = () => {
         initialNextPieces.push(bagRef.current.shift()!);
       }
       const { piece, newNextPieces } = spawnPiece(initialNextPieces, newUnlockedSpecialMinos);
+      
+      // 形状情報を反映
+      if (selectedShape && piece) {
+        piece.shape = selectedShape;
+      }
 
       return {
         ...prev,
