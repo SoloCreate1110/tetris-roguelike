@@ -16,6 +16,7 @@ import {
   LOCK_DELAY,
   SCORE_PER_LINE,
   DAMAGE_PER_LINE,
+  LINE_CLEAR_BONUS,
   COMBO_BONUS_PERCENT,
   ENEMIES,
   STAGE_ENEMIES,
@@ -424,6 +425,10 @@ export const useGameState = () => {
         scoreGain = SCORE_PER_LINE[lineCount] || 0;
         damage = DAMAGE_PER_LINE[lineCount] || 0;
         
+        // 複数ライン消去時のボーナス
+        const lineBonus = LINE_CLEAR_BONUS[lineCount] || 1.0;
+        damage = Math.floor(damage * lineBonus);
+        
         // コンボボーナス
         const comboMultiplier = 1 + (newCombo - 1) * (COMBO_BONUS_PERCENT / 100);
         damage = Math.floor(damage * comboMultiplier);
@@ -443,6 +448,11 @@ export const useGameState = () => {
 
       if (newEnemy && damage > 0) {
         newEnemy.currentHp -= damage;
+        
+        // 攻撃ゲージを減らす
+        const blocksClearedCount = linesToClear.length * GRID_WIDTH;
+        const gaugeReduction = blocksClearedCount * 50;
+        newEnemy.attackTimer = Math.max(0, newEnemy.attackTimer - gaugeReduction);
         
         // 敵が倒された
         if (newEnemy.currentHp <= 0) {
@@ -629,9 +639,13 @@ export const useGameState = () => {
 
       // 攻撃パターンに応じておじゃまブロックを配置
       if (pattern === 'random') {
-        // ランダムな位置に配置
-        for (let i = 0; i < width; i++) {
-          const x = Math.floor(Math.random() * GRID_WIDTH);
+        // ランダムな位置に配置（複数列にランダムに分散）
+        const positions = new Set<number>();
+        while (positions.size < Math.min(width, GRID_WIDTH)) {
+          positions.add(Math.floor(Math.random() * GRID_WIDTH));
+        }
+        
+        positions.forEach(x => {
           for (let dy = 0; dy < height; dy++) {
             let targetY = GRID_HEIGHT - 1;
             for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -649,7 +663,7 @@ export const useGameState = () => {
               };
             }
           }
-        }
+        });
       } else if (pattern === 'targeted') {
         // 現在のピースの位置を狙う
         const targetX = prev.currentPiece ? prev.currentPiece.x : Math.floor(GRID_WIDTH / 2);
@@ -761,7 +775,7 @@ export const useGameState = () => {
         enemy: newEnemy,
         gameState: 'playing',
         powerUps: [...prev.powerUps, powerUp],
-        grid: createEmptyGrid(),
+        grid: prev.grid,
         unlockedSpecialMinos: newUnlockedSpecialMinos,
         attackTimerProgress: 0,
       };

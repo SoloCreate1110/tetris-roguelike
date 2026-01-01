@@ -20,12 +20,20 @@ export const SCORE_PER_LINE: Record<number, number> = {
   4: 800, // テトリス
 };
 
-// ダメージ
+// ダメージ（1ブロック=1ダメージ）
 export const DAMAGE_PER_LINE: Record<number, number> = {
   1: 10,
-  2: 30,
-  3: 60,
-  4: 100, // テトリス
+  2: 20,
+  3: 30,
+  4: 40,
+};
+
+// ダメージボーナス倍率（複数ライン消去時）
+export const LINE_CLEAR_BONUS: Record<number, number> = {
+  1: 1.0,
+  2: 1.5,
+  3: 2.0,
+  4: 3.0,
 };
 
 // コンボボーナス（%）

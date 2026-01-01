@@ -101,12 +101,12 @@ export const applyIceEffect = (
 };
 
 /**
- * 爆弾ミノの効果：消去時に周囲1マスのブロックも消去
+ * 爆弾ミノの効果：消去時に周囲ブロックを消去し、追加ダメージを計算
  */
 export const applyBombEffect = (
   grid: CellState[][],
   clearedRows: number[]
-): CellState[][] => {
+): { grid: CellState[][]; bonusDamage: number } => {
   let newGrid = grid.map(row => row.map(cell => ({ ...cell })));
 
   // 消去された行の周囲を爆発範囲に
@@ -135,14 +135,16 @@ export const applyBombEffect = (
   });
 
   // 爆発範囲のブロックを消去
+  let bonusDamage = 0;
   explosionCells.forEach(key => {
     const [r, c] = key.split(',').map(Number);
-    if (!clearedRows.includes(r)) {
+    if (!clearedRows.includes(r) && newGrid[r][c].filled) {
       newGrid[r][c] = { filled: false, color: '', isGarbage: false };
+      bonusDamage += 5;
     }
   });
 
-  return newGrid;
+  return { grid: newGrid, bonusDamage };
 };
 
 /**
@@ -197,13 +199,15 @@ export const applySpecialMinoEffect = (
     case 'ICE':
       return applyIceEffect(grid, clearedRows, enemy, blockCount);
 
-    case 'BOMB':
+    case 'BOMB': {
+      const bombResult = applyBombEffect(grid, clearedRows);
       return {
-        grid: applyBombEffect(grid, clearedRows),
+        grid: bombResult.grid,
         enemy,
-        bonusDamage: blockCount * 30,
+        bonusDamage: bombResult.bonusDamage + blockCount * 10,
         freezeTime: 0,
       };
+    }
 
     case 'LIGHTNING':
       return {
